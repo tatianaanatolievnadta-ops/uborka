@@ -5,6 +5,33 @@
   const FIRST_LAUNCH_KEY = "multiHouseCleaner_firstLaunch";
   const USERS_KEY = "multiHouseCleaner_users";
   const SESSION_KEY = "multiHouseCleaner_session";
+  const NOTIF_DAILY_KEY = "multiHouseCleaner_notifDailySummary";
+  const DAY_MARK_KEY = "multiHouseCleaner_dayMark";
+
+  // Supabase (опционально): без ключа работает localStorage
+  const SUPABASE_URL = "https://wapnyeblryyxotnavnae.supabase.co";
+  const SUPABASE_ANON_KEY =
+    window.__SUPABASE_ANON_KEY__ ||
+    "ВСТАВЬТЕ_СЮДА_ANON_KEY_ИЗ_DASHBOARD_SUPABASE";
+
+  function isSupabaseReady() {
+    return (
+      typeof window !== "undefined" &&
+      window.supabase &&
+      SUPABASE_ANON_KEY &&
+      !String(SUPABASE_ANON_KEY).includes("ВСТАВЬТЕ")
+    );
+  }
+
+  let supabase = null;
+  if (isSupabaseReady()) {
+    try {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } catch (e) {
+      console.warn("Supabase init failed:", e);
+      supabase = null;
+    }
+  }
 
   const TRIAL_DAYS = 14;
   const UI_RETENTION_DAYS = 60;
@@ -13,8 +40,100 @@
   const MAX_HOUSES_PREMIUM = 5;
   const SKIP_WARN_AT = 3;
   const SKIP_RED_AT = 2;
+  const POINTS_PER_TASK = 10;
+  const REFERRAL_BASE_URL = "https://tatianaanatolievnadta-ops.github.io/uborka/";
+  const REFERRAL_BONUS_DAYS = 3;
+
+  const LEVEL_TIERS = [
+    { min: 0, max: 100, name: "Новичок" },
+    { min: 101, max: 300, name: "Чистюля" },
+    { min: 301, max: 600, name: "Мастер уборки" },
+    { min: 601, max: 1000, name: "Гуру чистоты" },
+    { min: 1001, max: Infinity, name: "Легенда чистоты" },
+  ];
+
+  const AVATAR_PRESETS = {
+    sloth: { emoji: "🦥", label: "Ленивец" },
+    cleaner: { emoji: "🧹", label: "Чистюля" },
+    angel: { emoji: "😇", label: "Бог чистоты" },
+  };
+
+  const TONE_OPTIONS = [
+    { id: "supportive", label: "😊 Поддерживающий" },
+    { id: "strict", label: "🗣️ Приказной" },
+    { id: "friendly", label: "🤝 Дружеский" },
+    { id: "clear", label: "📋 Чёткий исполнитель" },
+  ];
 
   const MS_DAY = 86400000;
+
+  const UNIVERSAL_ACTIONS = ["Протереть пыль", "Помыть пол", "Пропылесосить"];
+
+  const EXTRA_ACTIONS = [
+    "Сменить гардероб на лето/зиму",
+    "Убрать на полке (в ящике)",
+  ];
+
+  const SHELF_TASK_NAME = "Убрать на полке (в ящике)";
+
+  const SHELF_LOCATIONS = ["шкаф", "комод", "тумбочка", "стеллаж", "антресоль"];
+
+  const DEFAULT_TASK_IMAGE = "https://cdn-icons-png.flaticon.com/512/3095/3095111.png";
+
+  const TASK_IMAGE_BY_KEYWORD = [
+    { keys: ["пол", "полы"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095118.png" },
+    { keys: ["окно", "стекло"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095110.png" },
+    { keys: ["пыль"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095115.png" },
+    { keys: ["плита", "кухня"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095125.png" },
+    { keys: ["унитаз", "ванна"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095128.png" },
+    { keys: ["раковина"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095120.png" },
+    { keys: ["стирка", "шторы"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095132.png" },
+    { keys: ["шкаф", "комод", "полка"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095135.png" },
+    { keys: ["гардероб", "одежда"], url: "https://cdn-icons-png.flaticon.com/512/3095/3095130.png" },
+  ];
+
+  const ROOM_ACTIONS = {
+    kitchen: [
+      "Вымыть раковину",
+      "Помыть полы",
+      "Пропылесосить",
+      "Вымыть окно",
+      "Протереть подоконник",
+      "Вымыть газовую плиту",
+      "Вымыть микроволновую печь",
+      "Протереть кухонный гарнитур",
+      "Вымыть холодильник",
+      "Протереть стол",
+    ],
+    bedroom: [
+      "Заправить постель",
+      "Вымыть пол",
+      "Протереть пыль",
+      "Постирать шторы",
+      "Протереть зеркало",
+      "Пропылесосить ковёр",
+      "Проветрить",
+    ],
+    bathroom: [
+      "Вымыть ванну",
+      "Почистить унитаз",
+      "Протереть зеркало",
+      "Помыть пол",
+      "Почистить раковину",
+      "Протереть смесители",
+      "Почистить стиральную машину",
+    ],
+    living: [
+      "Пропылесосить",
+      "Протереть пыль",
+      "Вымыть пол",
+      "Протереть окна",
+      "Почистить мягкую мебель",
+      "Проветрить",
+    ],
+    hallway: ["Протереть пыль", "Помыть пол", "Протереть зеркало", "Почистить обувницу"],
+    balcony: ["Помыть пол", "Протереть подоконник", "Проветрить"],
+  };
 
   function uid() {
     return `id_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -32,28 +151,79 @@
     return Math.max(0, Math.ceil((targetDate - Date.now()) / 3600000));
   }
 
+  function defaultImageForTaskName(taskName) {
+    const n = String(taskName || "").toLowerCase();
+    for (const entry of TASK_IMAGE_BY_KEYWORD) {
+      if (entry.keys.some((k) => n.includes(k))) return entry.url;
+    }
+    return DEFAULT_TASK_IMAGE;
+  }
+
+  function getTaskDisplayImage(task) {
+    const rec = task?.recommendations || {};
+    const custom = String(rec.image || "").trim();
+    if (custom) return custom;
+    return defaultImageForTaskName(task?.name);
+  }
+
+  function isShelfTaskName(name) {
+    const n = String(name || "").trim();
+    return n === SHELF_TASK_NAME || n.includes("Убрать на полке");
+  }
+
+  function isFloorTaskName(name) {
+    const n = String(name || "").toLowerCase();
+    return (
+      n.includes("помыть пол") ||
+      n.includes("помыть полы") ||
+      n.includes("вымыть пол")
+    );
+  }
+
+  function calcRoomArea(width, length) {
+    const w = Number(width);
+    const l = Number(length);
+    if (!w || !l || w <= 0 || l <= 0) return null;
+    return Math.round(w * l * 100) / 100;
+  }
+
   function defaultRecommendations(taskName) {
     const map = {
       "Помыть пол": {
         means: "Универсальное средство для пола или вода с уксусом",
         inventory: "Швабра, ведро, тряпка из микрофибры",
         motions: "От дальнего угла к выходу, восьмёрками, не заходя на мокрое",
-        image:
-          "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=400&h=200&fit=crop",
+        image: "",
+      },
+      "Помыть полы": {
+        means: "Универсальное средство для пола или вода с уксусом",
+        inventory: "Швабра, ведро, тряпка из микрофибры",
+        motions: "От дальнего угла к выходу, восьмёрками, не заходя на мокрое",
+        image: "",
       },
       "Протереть пыль": {
         means: "Антистатический спрей или слегка влажная салфетка",
         inventory: "Микрофибра, стремянка при необходимости",
         motions: "Сверху вниз, не круговыми движениями — чтобы не размазать",
-        image:
-          "https://images.unsplash.com/photo-1563453392212-326f5e854473?w=400&h=200&fit=crop",
+        image: "",
       },
       "Вымыть раковину": {
         means: "Крем-чистящее для сантехники, сода",
         inventory: "Губка, старая зубная щётка для смесителя",
         motions: "Нанести — подождать 2–3 мин — круговыми движениями — сполоснуть",
-        image:
-          "https://images.unsplash.com/photo-1631889993959-41b4e9c6e3c5?w=400&h=200&fit=crop",
+        image: "",
+      },
+      [SHELF_TASK_NAME]: {
+        means: "Не требуется",
+        inventory: "Коробки, корзины, салфетка",
+        motions: "Разобрать полку по категориям, протереть пыль, вернуть нужное, лишнее убрать",
+        image: "",
+      },
+      "Сменить гардероб на лето/зиму": {
+        means: "Не требуется",
+        inventory: "Вешалки, коробки для хранения, мешки для стирки",
+        motions: "Достать сезонные вещи, сложить несезонные, проверить чистоту перед хранением",
+        image: "",
       },
     };
     return (
@@ -61,8 +231,7 @@
         means: "Подходящее чистящее средство по типу поверхности",
         inventory: "Тряпка, губка, перчатки",
         motions: "От чистого к грязному, сверху вниз",
-        image:
-          "https://images.unsplash.com/photo-1584820927498-cfe5211fd8bf?w=400&h=200&fit=crop",
+        image: "",
       }
     );
   }
@@ -97,24 +266,29 @@
     return catalog[taskName] || [];
   }
 
-  function makeTask(name, priority = "green", minutes = 15) {
+  function makeTask(name, priority = "green", minutes = 15, period = { type: "days", count: 1, value: 7 }) {
     return {
       id: uid(),
       name,
       priority,
       skipCount: 0,
       estimatedMinutes: minutes,
+      period,
+      createdAt: new Date().toISOString(),
       lastCompleted: null,
       completedToday: false,
       lastTimedSeconds: null,
+      location: null,
+      floorArea: null,
       recommendations: defaultRecommendations(name),
       products: defaultProducts(name),
       showRec: false,
     };
   }
 
-  function makeRoom(name, tasks) {
-    return { id: uid(), name, tasks };
+  function makeRoom(name, tasks, width = null, length = null) {
+    const area = calcRoomArea(width, length);
+    return { id: uid(), name, tasks, width, length, area };
   }
 
   function makeDefaultHouse(name) {
@@ -151,6 +325,24 @@
       lastVisitDate: now,
       deletionWarningShown: false,
       activeHouseId: null,
+      gamification: createDefaultGamification(),
+    };
+  }
+
+  function createDefaultGamification() {
+    return {
+      points: 0,
+      actionStats: {},
+      rewardHistory: [],
+      tone: "supportive",
+      avatar: { type: "letter", value: "" },
+      streakDays: 0,
+      dailyLog: {},
+      todaySkips: 0,
+      todayKey: new Date().toDateString(),
+      rewardsShown: {},
+      messyHouseShown: false,
+      totalFloorAreaCleaned: 0,
     };
   }
 
@@ -159,14 +351,19 @@
   let currentUser = null;
   let ui = {
     screen: "auth", // auth | app | deleted
-    tab: "plan",
+    tab: "homes",
     view: "houses",
+    planView: "rooms", // rooms | room | today | calendar
     activeHouseId: null,
+    activeRoomId: null,
+    calendar: { mode: "day", date: new Date().toISOString(), pickMonth: null },
     modal: null,
     toastTimer: null,
     stopwatch: { running: false, startedAt: 0, elapsed: 0, taskRef: null, tick: null },
     critTick: null,
     authError: "",
+    confetti: false,
+    justCompletedId: null,
   };
 
   const PROVIDER_LABELS = {
@@ -176,6 +373,11 @@
     email: "Почта",
   };
 
+  // ——— Supabase data layer ———
+  function getUserId() {
+    return currentUser?.id || null;
+  }
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -184,10 +386,6 @@
     } catch {
       return null;
     }
-  }
-
-  function saveState() {
-    if (state) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function loadUsers() {
@@ -233,6 +431,312 @@
     return user;
   }
 
+  function defaultNotifSettings() {
+    return { enabled: false, permission: "default", permissionRequested: false };
+  }
+
+  function taskFromRow(t) {
+    return {
+      id: t.id,
+      name: t.name,
+      priority: t.priority || "green",
+      skipCount: t.skip_count || 0,
+      estimatedMinutes: t.estimated_minutes ?? 15,
+      period: t.period || { type: "days", count: 1, value: 7 },
+      createdAt: t.created_at,
+      lastCompleted: t.last_completed,
+      completedToday: !!t.completed_today,
+      lastTimedSeconds: t.last_timed_seconds,
+      location: t.location || null,
+      floorArea: t.floor_area != null ? Number(t.floor_area) : null,
+      recommendations: t.recommendations || {},
+      products: t.products || [],
+      showRec: !!t.show_rec,
+    };
+  }
+
+  function taskToRow(task, roomId, userId) {
+    return {
+      id: task.id,
+      user_id: userId,
+      room_id: roomId,
+      name: task.name,
+      priority: task.priority || "green",
+      skip_count: task.skipCount || 0,
+      estimated_minutes: task.estimatedMinutes ?? 15,
+      period: task.period || { type: "days", count: 1, value: 7 },
+      created_at: task.createdAt || new Date().toISOString(),
+      last_completed: task.lastCompleted,
+      completed_today: !!task.completedToday,
+      last_timed_seconds: task.lastTimedSeconds,
+      location: task.location || null,
+      floor_area: task.floorArea != null ? Number(task.floorArea) : null,
+      recommendations: task.recommendations || {},
+      products: task.products || [],
+      show_rec: !!task.showRec,
+    };
+  }
+
+  function roomFromRow(r, tasks) {
+    return {
+      id: r.id,
+      name: r.name,
+      width: r.width,
+      length: r.length,
+      area: r.area,
+      tasks: (tasks || []).filter((t) => t.room_id === r.id).map(taskFromRow),
+    };
+  }
+
+  function nestUserData(profile, houses, rooms, tasks, authUser) {
+    const nestedHouses = (houses || []).map((h) => ({
+      id: h.id,
+      name: h.name,
+      rooms: (rooms || [])
+        .filter((r) => r.house_id === h.id)
+        .map((r) => roomFromRow(r, tasks)),
+    }));
+
+    const sub = profile?.subscription || {
+      status: "trial",
+      trialStartDate: new Date().toISOString(),
+      planType: "premium",
+      billing: null,
+      bonusDays: 0,
+    };
+    if (sub.trialStartDate && typeof sub.trialStartDate !== "string") {
+      sub.trialStartDate = new Date(sub.trialStartDate).toISOString();
+    }
+
+    return {
+      houses: nestedHouses,
+      subscription: sub,
+      lastVisitDate: profile?.last_visit_date || new Date().toISOString(),
+      deletionWarningShown: !!profile?.deletion_warning_shown,
+      activeHouseId: profile?.active_house_id || nestedHouses[0]?.id || null,
+      gamification: profile?.gamification || createDefaultGamification(),
+      profile: {
+        name: profile?.name || authUser?.user_metadata?.name || "Пользователь",
+        email: authUser?.email || "",
+        provider: profile?.provider || "email",
+      },
+      notifSettings: profile?.notif_settings || defaultNotifSettings(),
+    };
+  }
+
+  async function loadUserData() {
+    if (!isSupabaseReady() || !supabase) return null;
+
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr || !user) return null;
+
+    const userId = user.id;
+    const [profileRes, housesRes, roomsRes, tasksRes] = await Promise.all([
+      supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
+      supabase.from("houses").select("*").eq("user_id", userId),
+      supabase.from("rooms").select("*").eq("user_id", userId),
+      supabase.from("tasks").select("*").eq("user_id", userId),
+    ]);
+
+    if (profileRes.error) console.error("load profile", profileRes.error);
+    if (housesRes.error) console.error("load houses", housesRes.error);
+    if (roomsRes.error) console.error("load rooms", roomsRes.error);
+    if (tasksRes.error) console.error("load tasks", tasksRes.error);
+
+    return nestUserData(
+      profileRes.data,
+      housesRes.data || [],
+      roomsRes.data || [],
+      tasksRes.data || [],
+      user
+    );
+  }
+
+  async function saveProfile() {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId || !state) return;
+    const row = {
+      user_id: userId,
+      name: state.profile?.name || currentUser?.name,
+      provider: state.profile?.provider || currentUser?.provider || "email",
+      subscription: state.subscription,
+      gamification: state.gamification || createDefaultGamification(),
+      last_visit_date: state.lastVisitDate,
+      deletion_warning_shown: !!state.deletionWarningShown,
+      active_house_id: state.activeHouseId,
+      referral_code: currentUser?.referralCode || userId,
+      referrals_count: currentUser?.referralsCount || 0,
+      referral_bonus_days: currentUser?.referralBonusDays || 0,
+      referred_by: currentUser?.referredBy || null,
+      notif_settings: state.notifSettings || defaultNotifSettings(),
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("profiles").upsert(row);
+    if (error) console.error("saveProfile", error);
+  }
+
+  async function saveHouse(house) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId || !house) return;
+    const { error } = await supabase.from("houses").upsert({
+      id: house.id,
+      user_id: userId,
+      name: house.name,
+    });
+    if (error) console.error("saveHouse", error);
+    for (const room of house.rooms || []) {
+      await upsertRoomToDb(room, house.id);
+    }
+  }
+
+  async function upsertRoomToDb(room, houseId) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId || !room) return;
+    const hid = houseId || findHouseIdForRoom(room.id);
+    if (!hid) return;
+    const area = calcRoomArea(room.width, room.length);
+    room.area = area;
+    const { error } = await supabase.from("rooms").upsert({
+      id: room.id,
+      user_id: userId,
+      house_id: hid,
+      name: room.name,
+      width: room.width ?? null,
+      length: room.length ?? null,
+      area: area,
+    });
+    if (error) console.error("upsertRoomToDb", error);
+    for (const task of room.tasks || []) {
+      await upsertTaskToDb(task, room.id);
+    }
+  }
+
+  async function upsertTaskToDb(task, roomId) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId || !task) return;
+    const rid = roomId || findRoomIdForTask(task.id);
+    if (!rid) return;
+    const { error } = await supabase.from("tasks").upsert(taskToRow(task, rid, userId));
+    if (error) console.error("upsertTaskToDb", error);
+  }
+
+  async function deleteHouse(id) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId) return;
+    const { error } = await supabase.from("houses").delete().eq("id", id).eq("user_id", userId);
+    if (error) console.error("deleteHouse", error);
+  }
+
+  async function deleteRoom(id) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId) return;
+    const { error } = await supabase.from("rooms").delete().eq("id", id).eq("user_id", userId);
+    if (error) console.error("deleteRoom", error);
+  }
+
+  async function deleteTask(id) {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId) return;
+    const { error } = await supabase.from("tasks").delete().eq("id", id).eq("user_id", userId);
+    if (error) console.error("deleteTask", error);
+  }
+
+  function findHouseIdForRoom(roomId) {
+    if (!state?.houses) return null;
+    for (const house of state.houses) {
+      if (house.rooms.some((r) => r.id === roomId)) return house.id;
+    }
+    return null;
+  }
+
+  function findRoomIdForTask(taskId) {
+    const found = findTask(taskId);
+    return found?.room?.id || null;
+  }
+
+  async function seedDefaultDataToDb(appState) {
+    if (!isSupabaseReady() || !supabase) return;
+    await saveProfile();
+    for (const house of appState.houses || []) {
+      await saveHouse(house);
+    }
+  }
+
+  async function wipeUserDataFromDb() {
+    if (!isSupabaseReady() || !supabase) return;
+    const userId = getUserId();
+    if (!userId) return;
+    await supabase.from("houses").delete().eq("user_id", userId);
+    const fresh = createFreshState();
+    state = {
+      ...fresh,
+      profile: state?.profile || {},
+    };
+    state.activeHouseId = state.houses[0].id;
+    await seedDefaultDataToDb(state);
+  }
+
+  let saveProfileTimer = null;
+  function saveState() {
+    if (!state) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error("saveState local", e);
+    }
+    if (currentUser && isSupabaseReady() && supabase) {
+      clearTimeout(saveProfileTimer);
+      saveProfileTimer = setTimeout(() => {
+        saveProfile().catch((e) => console.error(e));
+      }, 300);
+    }
+  }
+
+  function saveStateNow() {
+    return saveProfile();
+  }
+
+  function mapAuthUser(user) {
+    return {
+      id: user.id,
+      email: user.email || "",
+      name: user.user_metadata?.name || user.email?.split("@")[0] || "Пользователь",
+      provider: user.app_metadata?.provider === "email" ? "email" : user.app_metadata?.provider || "email",
+      referralCode: user.id,
+      referralsCount: 0,
+      referralBonusDays: 0,
+      referredBy: null,
+    };
+  }
+
+  async function mergeProfileIntoUser(user) {
+    if (!isSupabaseReady() || !supabase) return user;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("referrals_count, referral_bonus_days, referred_by, referral_code, name, provider")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (profile) {
+      user.referralCode = profile.referral_code || user.id;
+      user.referralsCount = profile.referrals_count || 0;
+      user.referralBonusDays = profile.referral_bonus_days || 0;
+      user.referredBy = profile.referred_by;
+      if (profile.name) user.name = profile.name;
+      if (profile.provider) user.provider = profile.provider;
+    }
+    return user;
+  }
+
   function isFirstLaunchDone() {
     return localStorage.getItem(FIRST_LAUNCH_KEY) === "1";
   }
@@ -241,12 +745,18 @@
     localStorage.setItem(FIRST_LAUNCH_KEY, "1");
   }
 
-  function hardWipeKeepFirstLaunch() {
+  async function hardWipeKeepFirstLaunch() {
+    if (isSupabaseReady() && supabase) {
+      await wipeUserDataFromDb();
+      return;
+    }
     const kept = localStorage.getItem(FIRST_LAUNCH_KEY);
     const users = localStorage.getItem(USERS_KEY);
+    const session = localStorage.getItem(SESSION_KEY);
     localStorage.clear();
     if (kept) localStorage.setItem(FIRST_LAUNCH_KEY, kept);
     if (users) localStorage.setItem(USERS_KEY, users);
+    if (session) localStorage.setItem(SESSION_KEY, session);
   }
 
   function getActiveHouse() {
@@ -264,8 +774,9 @@
   }
 
   function trialDaysLeft() {
+    const bonus = (state.subscription.bonusDays || 0) + (currentUser?.referralBonusDays || 0);
     const used = daysBetween(state.subscription.trialStartDate);
-    return Math.max(0, TRIAL_DAYS - used);
+    return Math.max(0, TRIAL_DAYS + bonus - used);
   }
 
   function refreshSubscriptionStatus() {
@@ -303,6 +814,779 @@
     return null;
   }
 
+  function findRoomById(roomId) {
+    for (const house of state.houses) {
+      const room = house.rooms.find((r) => r.id === roomId);
+      if (room) return { house, room };
+    }
+    return null;
+  }
+
+  function normalizeRoomKey(roomName) {
+    const n = String(roomName || "").toLowerCase().trim();
+    if (n.includes("кухн")) return "kitchen";
+    if (n.includes("спальн") || n.includes("гостев")) return "bedroom";
+    if (n.includes("ванн") || n.includes("сануз") || n.includes("туал")) return "bathroom";
+    if (n.includes("зал") || n.includes("гостин")) return "living";
+    if (n.includes("корид") || n.includes("прихож")) return "hallway";
+    if (n.includes("балкон") || n.includes("лодж")) return "balcony";
+    return "default";
+  }
+
+  function getRoomActions(roomName) {
+    const key = normalizeRoomKey(roomName);
+    const base =
+      key === "default"
+        ? [...UNIVERSAL_ACTIONS]
+        : ROOM_ACTIONS[key]
+          ? [...ROOM_ACTIONS[key]]
+          : [...UNIVERSAL_ACTIONS];
+    for (const action of EXTRA_ACTIONS) {
+      if (!base.includes(action)) base.push(action);
+    }
+    return base;
+  }
+
+  function startOfDay(d = new Date()) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  }
+
+  function normalizePeriod(task) {
+    if (task?.period?.type) {
+      const p = { ...task.period };
+      if (p.type === "monthly") return { type: "days", count: 1, value: 30 };
+      if (p.type === "halfyear") return { type: "days", count: 1, value: 180 };
+      if (p.type === "days") {
+        if (p.count == null) p.count = 1;
+        if (p.value == null) p.value = p.value ?? 7;
+        return p;
+      }
+      return p;
+    }
+    if (task?.frequencyDays != null) {
+      if (task.frequencyDays === 1) return { type: "daily" };
+      return { type: "days", count: 1, value: task.frequencyDays };
+    }
+    return { type: "days", count: 1, value: 7 };
+  }
+
+  function periodLabel(task) {
+    const p = normalizePeriod(task);
+    if (p.type === "daily") return "Каждый день";
+    if (p.type === "days") {
+      const c = p.count || 1;
+      const v = p.value || 1;
+      const raz = c === 1 ? "раз" : c >= 2 && c <= 4 ? "раза" : "раз";
+      return `${c} ${raz} в ${v} ${pluralDays(v)}`;
+    }
+    return "Каждый день";
+  }
+
+  function addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return startOfDay(d);
+  }
+
+  function setDayInMonth(baseDate, dayOfMonth, monthOffset) {
+    const d = new Date(baseDate);
+    d.setDate(1);
+    d.setMonth(d.getMonth() + monthOffset);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(Math.max(1, dayOfMonth || 1), last));
+    return startOfDay(d);
+  }
+
+  function calcNextDueDate(task) {
+    const period = normalizePeriod(task);
+    if (!task.lastCompleted) return startOfDay();
+
+    const base = startOfDay(task.lastCompleted);
+    switch (period.type) {
+      case "daily":
+        return addDays(base, 1);
+      case "days":
+        return addDays(base, period.value || 1);
+      default:
+        return addDays(base, 7);
+    }
+  }
+
+  function dateKey(d) {
+    const x = startOfDay(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  }
+
+  function parseDateKey(key) {
+    const [y, m, d] = key.split("-").map(Number);
+    return startOfDay(new Date(y, m - 1, d));
+  }
+
+  function getTaskAnchorDate(task) {
+    if (task.lastCompleted) return startOfDay(task.lastCompleted);
+    if (task.createdAt) return startOfDay(task.createdAt);
+    return startOfDay();
+  }
+
+  function generateOccurrencesInRange(task, rangeStart, rangeEnd) {
+    const dates = [];
+    const p = normalizePeriod(task);
+    const anchor = getTaskAnchorDate(task);
+    const start = startOfDay(rangeStart);
+    const end = startOfDay(rangeEnd);
+
+    if (p.type === "daily") {
+      let d = anchor < start ? new Date(start) : new Date(anchor);
+      while (d <= end) {
+        dates.push(new Date(d));
+        d = addDays(d, 1);
+      }
+      return dates;
+    }
+
+    if (p.type === "days") {
+      const interval = Math.max(1, p.value || 1);
+      let d = new Date(anchor);
+      if (d < start) {
+        const diff = Math.floor((start - d) / MS_DAY);
+        const steps = Math.ceil(diff / interval);
+        d = addDays(anchor, steps * interval);
+      }
+      while (d <= end) {
+        if (d >= anchor) dates.push(new Date(d));
+        d = addDays(d, interval);
+      }
+    }
+    return dates;
+  }
+
+  function isTaskScheduledOnDate(task, date) {
+    const key = dateKey(date);
+    return generateOccurrencesInRange(task, date, date).some((d) => dateKey(d) === key);
+  }
+
+  function getAllTasksFlat() {
+    const list = [];
+    if (!state?.houses) return list;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          list.push({ house, room, task });
+        }
+      }
+    }
+    return list;
+  }
+
+  function getTasksForDate(date) {
+    const list = [];
+    for (const { house, room, task } of getAllTasksFlat()) {
+      if (isTaskScheduledOnDate(task, date)) {
+        list.push({ house, room, task });
+      }
+    }
+    return list;
+  }
+
+  function countTasksInMonth(year, month) {
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+    const keys = new Set();
+    for (const { task } of getAllTasksFlat()) {
+      for (const d of generateOccurrencesInRange(task, start, end)) {
+        keys.add(dateKey(d) + task.id);
+      }
+    }
+    return keys.size;
+  }
+
+  function formatDateRu(d) {
+    return d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" });
+  }
+
+  const MONTH_NAMES = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+  ];
+
+  function isTaskDueToday(task) {
+    if (task.completedToday) return true;
+    const today = startOfDay();
+    return today >= calcNextDueDate(task);
+  }
+
+  function migrateState() {
+    if (!state?.houses) return;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          if (!task.period) {
+            if (task.frequencyDays == null) {
+              task.period = { type: "days", count: 1, value: 7 };
+            } else if (task.frequencyDays === 1) {
+              task.period = { type: "daily" };
+            } else {
+              task.period = { type: "days", count: 1, value: task.frequencyDays };
+            }
+          } else {
+            task.period = normalizePeriod(task);
+          }
+          if (!task.createdAt) task.createdAt = new Date().toISOString();
+          if (task.location == null) task.location = null;
+          if (task.floorArea == null) task.floorArea = null;
+          delete task.frequencyDays;
+        }
+        if (room.width != null || room.length != null) {
+          room.area = calcRoomArea(room.width, room.length);
+        }
+      }
+    }
+    if (!state.gamification) state.gamification = createDefaultGamification();
+    if (state.gamification.totalFloorAreaCleaned == null) {
+      state.gamification.totalFloorAreaCleaned = 0;
+    }
+  }
+
+  // ——— Gamification & messages ———
+  const MESSAGES = {
+    taskDone: {
+      supportive: "Ты молодец! Ещё чуть-чуть — и будет идеально!",
+      strict: "Так держать! Следующая задача — без промедления!",
+      friendly: "Ну что, подружка, давай вместе — я с тобой!",
+      clear: "Задача выполнена. Переходите к следующей.",
+    },
+    skipWarn: {
+      supportive: "Ничего страшного, но эту задачу уже пора сделать — ты справишься!",
+      strict: "Быстро убрать! Почему так медленно?",
+      friendly: "Эй, не бросай — вместе быстрее справимся!",
+      clear: "Задача пропущена 3 раза. Требуется выполнение.",
+    },
+    skipRed: {
+      supportive: "Задача давно ждёт — давай вернёмся к ней?",
+      strict: "Слишком много пропусков! Немедленно выполнить!",
+      friendly: "Ой, эта задача уже краснеет — поможем ей?",
+      clear: "Превышен лимит пропусков. Приоритет: высокий.",
+    },
+    welcomeBack: {
+      supportive: "С возвращением, {name}! Рады видеть тебя снова!",
+      strict: "На месте, {name}. Приступай к задачам.",
+      friendly: "Привет, {name}! Как настроение — уберёмся?",
+      clear: "Вход выполнен. Пользователь: {name}.",
+    },
+    accountCreated: {
+      supportive: "Добро пожаловать! У тебя всё получится!",
+      strict: "Аккаунт создан. Начинай работу.",
+      friendly: "Ура, ты с нами! Поехали убираться!",
+      clear: "Регистрация завершена. Можно приступать.",
+    },
+    remindSent: {
+      supportive: "Напоминание отправлено — ты не забудешь!",
+      strict: "Напоминание активировано. Выполнить задачу.",
+      friendly: "Пинганула тебя — не забудь про задачку!",
+      clear: "Уведомление отправлено.",
+    },
+    goldenStar: {
+      supportive: "Невероятно! 7 дней без пропусков — ты звезда!",
+      strict: "7 дней без пропусков. Заслуженная награда.",
+      friendly: "Ура-ура! Неделя без пропусков — ты супер!",
+      clear: "Серия 7 дней выполнена. Бонус начислен.",
+    },
+    messyHouse: {
+      supportive: "Похоже, дом ждёт тебя — начнём с малого?",
+      strict: "⚠️ Ты запустил дом! Пора браться за дело!",
+      friendly: "Эй, домик скучает — давай наведём порядок!",
+      clear: "⚠️ Ты запустил дом! Пора браться за дело!",
+    },
+    inactive30: {
+      supportive: "Начни с малого — чистота начинается с первого взмаха тряпки! У тебя всё получится!",
+      strict: "30 дней без активности. Начните с одной задачи.",
+      friendly: "Давно не виделись! Один маленький шаг — и снова в ритме!",
+      clear: "Долгое отсутствие. Рекомендуется начать с простой задачи.",
+    },
+    taskSuggest: {
+      supportive: "Вот что можно успеть за {minutes} мин — ты справишься!",
+      strict: "План на {minutes} минут. Выполнять по порядку.",
+      friendly: "За {minutes} минут вместе успеем вот это!",
+      clear: "Подборка задач на {minutes} мин.",
+    },
+    timerSaved: {
+      supportive: "Время записано — отличный темп!",
+      strict: "Время зафиксировано.",
+      friendly: "Записала время — молодец!",
+      clear: "Данные таймера сохранены.",
+    },
+  };
+
+  function ensureGamification() {
+    if (!state.gamification) state.gamification = createDefaultGamification();
+    const g = state.gamification;
+    const today = new Date().toDateString();
+    if (g.todayKey !== today) {
+      g.todayKey = today;
+      g.todaySkips = 0;
+    }
+    return g;
+  }
+
+  function getTone() {
+    return ensureGamification().tone || "supportive";
+  }
+
+  function getMessage(key, params = {}) {
+    const tone = getTone();
+    const pack = MESSAGES[key] || {};
+    let text = pack[tone] || pack.supportive || "";
+    Object.keys(params).forEach((k) => {
+      text = text.replace(new RegExp(`\\{${k}\\}`, "g"), params[k]);
+    });
+    return text;
+  }
+
+  function getLevelInfo(points) {
+    const pts = Math.max(0, points || 0);
+    for (let i = LEVEL_TIERS.length - 1; i >= 0; i--) {
+      if (pts >= LEVEL_TIERS[i].min) {
+        const tier = LEVEL_TIERS[i];
+        const next = LEVEL_TIERS[i + 1];
+        return {
+          name: tier.name,
+          points: pts,
+          currentMin: tier.min,
+          nextMin: next ? next.min : null,
+          nextName: next ? next.name : null,
+          progressPct: Math.min(100, Math.round((pts / 1000) * 100)),
+        };
+      }
+    }
+    return { name: "Новичок", points: pts, progressPct: 0, nextMin: 101, nextName: "Чистюля" };
+  }
+
+  function addRewardHistory(entry) {
+    const g = ensureGamification();
+    g.rewardHistory.unshift({
+      id: uid(),
+      date: new Date().toISOString(),
+      ...entry,
+    });
+    if (g.rewardHistory.length > 50) g.rewardHistory.length = 50;
+  }
+
+  function addPoints(amount, title, kind = "reward") {
+    const g = ensureGamification();
+    g.points = Math.max(0, (g.points || 0) + amount);
+    addRewardHistory({ title, points: amount, kind });
+    saveState();
+    return g.points;
+  }
+
+  function recordActionStat(actionName) {
+    const g = ensureGamification();
+    g.actionStats[actionName] = (g.actionStats[actionName] || 0) + 1;
+  }
+
+  function roomIcon(roomName) {
+    const n = String(roomName || "").toLowerCase();
+    if (n.includes("кухн")) return "🍳";
+    if (n.includes("спальн")) return "🛏️";
+    if (n.includes("гостин") || n.includes("зал")) return "🛋️";
+    if (n.includes("ванн")) return "🚿";
+    if (n.includes("туал") || n.includes("сануз")) return "🚽";
+    if (n.includes("корид") || n.includes("прихож")) return "🚪";
+    if (n.includes("балкон") || n.includes("лодж")) return "🌿";
+    if (n.includes("гостев")) return "🛏️";
+    return "🏠";
+  }
+
+  function roomDisplayName(roomName) {
+    return `${roomIcon(roomName)} ${roomName}`;
+  }
+
+  function getAvatarHtml(user, g) {
+    const av = g?.avatar || { type: "letter", value: "" };
+    if (av.type === "upload" && av.value) {
+      return `<img class="avatar-img" src="${av.value}" alt="Аватар" />`;
+    }
+    if (av.type === "preset" && AVATAR_PRESETS[av.value]) {
+      return `<span class="avatar-emoji">${AVATAR_PRESETS[av.value].emoji}</span>`;
+    }
+    const letter = (user?.name || "?").trim().charAt(0).toUpperCase() || "?";
+    return `<span class="avatar-letter">${escapeHtml(letter)}</span>`;
+  }
+
+  function getAllDueTodayTasks() {
+    const list = [];
+    if (!state?.houses) return list;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          if (isTaskDueToday(task)) list.push(task);
+        }
+      }
+    }
+    return list;
+  }
+
+  function updateDailyLog() {
+    const g = ensureGamification();
+    const today = new Date().toDateString();
+    const due = getAllDueTodayTasks();
+    g.dailyLog[today] = {
+      completed: due.filter((t) => t.completedToday).length,
+      total: due.length,
+      skipped: g.todaySkips || 0,
+    };
+  }
+
+  function getLastCompletionDate() {
+    let last = null;
+    if (!state?.houses) return null;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          if (task.lastCompleted && (!last || task.lastCompleted > last)) {
+            last = task.lastCompleted;
+          }
+        }
+      }
+    }
+    return last;
+  }
+
+  function applyReferralBonusToSubscription() {
+    if (!currentUser?.referralBonusDays) return;
+    state.subscription.bonusDays = (state.subscription.bonusDays || 0) + currentUser.referralBonusDays;
+    currentUser.referralBonusDays = 0;
+    upsertUser(currentUser);
+    saveState();
+  }
+
+  function getRefFromUrl() {
+    try {
+      return new URLSearchParams(window.location.search).get("ref");
+    } catch {
+      return null;
+    }
+  }
+
+  async function processReferralForNewUser(newUser) {
+    const ref = getRefFromUrl();
+    if (!ref || !newUser?.id) return;
+    if (isSupabaseReady() && supabase) {
+      const { data: referrer } = await supabase
+        .from("profiles")
+        .select("user_id, referrals_count, referral_bonus_days")
+        .or(`referral_code.eq.${ref},user_id.eq.${ref}`)
+        .neq("user_id", newUser.id)
+        .maybeSingle();
+      if (!referrer) return;
+      newUser.referredBy = referrer.user_id;
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          referrals_count: (referrer.referrals_count || 0) + 1,
+          referral_bonus_days: (referrer.referral_bonus_days || 0) + REFERRAL_BONUS_DAYS,
+        })
+        .eq("user_id", referrer.user_id);
+      if (error) console.error("processReferral", error);
+      return;
+    }
+    const users = loadUsers();
+    const referrer = users.find((u) => u.id === ref || u.referralCode === ref);
+    if (!referrer || referrer.id === newUser.id) return;
+    newUser.referredBy = referrer.id;
+    referrer.referralsCount = (referrer.referralsCount || 0) + 1;
+    referrer.referralBonusDays = (referrer.referralBonusDays || 0) + REFERRAL_BONUS_DAYS;
+    upsertUser(referrer);
+  }
+
+  function getReferralLink() {
+    if (!currentUser) return REFERRAL_BASE_URL;
+    return `${REFERRAL_BASE_URL}?ref=${encodeURIComponent(currentUser.id)}`;
+  }
+
+  async function shareProduct(productName) {
+    const link = getReferralLink();
+    try {
+      await navigator.clipboard.writeText(link);
+      toast(`Ссылка скопирована! (${productName})`);
+    } catch {
+      toast("Не удалось скопировать ссылку");
+    }
+  }
+
+  function checkGamificationEvents() {
+    if (!state) return;
+    const g = ensureGamification();
+    updateDailyLog();
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yKey = yesterday.toDateString();
+    const yLog = g.dailyLog[yKey];
+    if (yLog && yLog.total > 0) {
+      if (yLog.completed === yLog.total && yLog.skipped === 0) {
+        g.streakDays = (g.streakDays || 0) + 1;
+      } else {
+        g.streakDays = 0;
+      }
+    }
+
+    if (g.streakDays >= 7 && !g.rewardsShown?.goldenStar) {
+      g.rewardsShown = g.rewardsShown || {};
+      g.rewardsShown.goldenStar = new Date().toISOString();
+      addPoints(50, "Золотая звезда! +50 бонусных очков", "reward");
+      g.streakDays = 0;
+      ui.modal = { type: "gamificationReward", variant: "goldenStar", points: 50 };
+      return;
+    }
+
+    const messyTask = findMessyTask();
+    if (messyTask && !g.messyHouseShown) {
+      g.messyHouseShown = true;
+      addPoints(-20, "Штраф за запущенный дом", "penalty");
+      ui.modal = { type: "gamificationReward", variant: "messyHouse", points: -20 };
+      return;
+    }
+
+    const lastDone = getLastCompletionDate();
+    const inactiveDays = lastDone ? daysBetween(lastDone) : daysBetween(state.lastVisitDate);
+    const hasTasks = state.houses?.some((h) => h.rooms.some((r) => r.tasks.length));
+    if (hasTasks && inactiveDays >= 30 && !g.rewardsShown?.inactive30) {
+      g.rewardsShown = g.rewardsShown || {};
+      g.rewardsShown.inactive30 = new Date().toISOString();
+      addPoints(10, "Бонус за возвращение", "reward");
+      ui.modal = { type: "gamificationReward", variant: "inactive30", points: 10 };
+    }
+  }
+
+  function findMessyTask() {
+    if (!state?.houses) return null;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          if ((task.skipCount || 0) >= SKIP_WARN_AT) return task;
+        }
+      }
+    }
+    return null;
+  }
+
+  function setAvatarPreset(presetId) {
+    const g = ensureGamification();
+    g.avatar = { type: "preset", value: presetId };
+    saveState();
+    render();
+    toast("Аватар обновлён");
+  }
+
+  function setAvatarUpload(base64) {
+    const g = ensureGamification();
+    g.avatar = { type: "upload", value: base64 };
+    saveState();
+    render();
+    toast("Фото загружено");
+  }
+
+  function setTone(toneId) {
+    const g = ensureGamification();
+    g.tone = toneId;
+    saveState();
+    render();
+  }
+
+  function getTodayProgress(house) {
+    let total = 0;
+    let done = 0;
+    for (const room of house.rooms) {
+      for (const task of room.tasks) {
+        if (!isTaskDueToday(task)) continue;
+        total++;
+        if (task.completedToday) done++;
+      }
+    }
+    return { done, total };
+  }
+
+  function triggerConfetti(taskId) {
+    ui.confetti = true;
+    ui.justCompletedId = taskId;
+    setTimeout(() => {
+      ui.confetti = false;
+      ui.justCompletedId = null;
+      const el = document.querySelector(".confetti-layer");
+      if (el) el.remove();
+    }, 1800);
+  }
+
+  // ——— Notifications ———
+  function loadNotifSettings() {
+    if (state?.notifSettings) return { ...state.notifSettings };
+    return defaultNotifSettings();
+  }
+
+  function saveNotifSettings(settings) {
+    if (!state) return;
+    state.notifSettings = { ...settings };
+    saveState();
+  }
+
+  function syncNotifPermission() {
+    const settings = loadNotifSettings();
+    if ("Notification" in window) {
+      settings.permission = Notification.permission;
+      saveNotifSettings(settings);
+    }
+    return settings;
+  }
+
+  function notificationsSupported() {
+    return "Notification" in window;
+  }
+
+  function notificationsAllowed() {
+    if (!notificationsSupported()) return false;
+    const settings = syncNotifPermission();
+    return settings.enabled && Notification.permission === "granted";
+  }
+
+  async function requestNotifPermission() {
+    if (!notificationsSupported()) {
+      toast("Браузер не поддерживает уведомления");
+      return false;
+    }
+    const settings = loadNotifSettings();
+    let perm = Notification.permission;
+    if (perm === "default") {
+      perm = await Notification.requestPermission();
+      settings.permissionRequested = true;
+    }
+    settings.permission = perm;
+    saveNotifSettings(settings);
+    return perm === "granted";
+  }
+
+  function showBrowserNotification(title, body) {
+    if (!notificationsAllowed()) return false;
+    try {
+      new Notification(title, { body, tag: "domashniy-plan" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function pluralTasks(n) {
+    const abs = Math.abs(n) % 100;
+    const d = abs % 10;
+    if (abs > 10 && abs < 20) return "дел";
+    if (d === 1) return "дело";
+    if (d >= 2 && d <= 4) return "дела";
+    return "дел";
+  }
+
+  function countIncompleteTasks() {
+    if (!state?.houses) return 0;
+    let count = 0;
+    for (const house of state.houses) {
+      for (const room of house.rooms) {
+        for (const task of room.tasks) {
+          if (!task.completedToday && isTaskDueToday(task)) count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  function showDailySummaryIfNeeded() {
+    if (!notificationsAllowed()) return;
+    const count = countIncompleteTasks();
+    if (count === 0) return;
+    const today = new Date().toDateString();
+    if (localStorage.getItem(NOTIF_DAILY_KEY) === today) return;
+    localStorage.setItem(NOTIF_DAILY_KEY, today);
+    showBrowserNotification(
+      "🧹 Домашний план",
+      `У вас ${count} ${pluralTasks(count)} на сегодня. Откройте приложение, чтобы увидеть список.`
+    );
+  }
+
+  async function initNotificationsOnLoad() {
+    if (!notificationsSupported()) return;
+    const settings = loadNotifSettings();
+    settings.permission = Notification.permission;
+
+    if (Notification.permission === "default" && !settings.permissionRequested) {
+      settings.permissionRequested = true;
+      saveNotifSettings(settings);
+      const perm = await Notification.requestPermission();
+      settings.permission = perm;
+      saveNotifSettings(settings);
+    } else {
+      saveNotifSettings(settings);
+    }
+
+    showDailySummaryIfNeeded();
+  }
+
+  async function remindTask(taskId) {
+    if (!notificationsSupported()) {
+      toast("Браузер не поддерживает уведомления");
+      return;
+    }
+
+    let settings = loadNotifSettings();
+    if (Notification.permission !== "granted") {
+      const granted = await requestNotifPermission();
+      if (!granted) {
+        toast("Разрешите уведомления в браузере");
+        render();
+        return;
+      }
+      settings = loadNotifSettings();
+    }
+
+    if (!settings.enabled) {
+      toast("Включите уведомления в профиле");
+      return;
+    }
+
+    const found = findTask(taskId);
+    if (!found) return;
+    const { room, task } = found;
+    const ok = showBrowserNotification(
+      "🧹 Напоминание",
+      `Напоминание: ${task.name} в комнате ${room.name}`
+    );
+    if (ok) toast(getMessage("remindSent"));
+  }
+
+  async function toggleNotificationsEnabled(enabled) {
+    const settings = loadNotifSettings();
+    settings.enabled = enabled;
+    saveNotifSettings(settings);
+
+    if (enabled && Notification.permission !== "granted") {
+      const granted = await requestNotifPermission();
+      if (!granted) {
+        settings.enabled = false;
+        saveNotifSettings(settings);
+        toast("Разрешите уведомления в браузере");
+      } else if (countIncompleteTasks() > 0) {
+        showDailySummaryIfNeeded();
+      }
+    }
+    render();
+  }
+
+  function notifPermissionLabel() {
+    if (!notificationsSupported()) return "Не поддерживается";
+    syncNotifPermission();
+    const map = { granted: "Разрешены", denied: "Запрещены", default: "Не запрошены" };
+    return map[Notification.permission] || Notification.permission;
+  }
+
   function allProducts() {
     const list = [];
     for (const house of state.houses) {
@@ -329,51 +1613,116 @@
 
   function resetCompletedTodayIfNeeded() {
     const today = new Date().toDateString();
-    const key = "multiHouseCleaner_dayMark";
-    const marked = localStorage.getItem(key);
+    const marked = localStorage.getItem(DAY_MARK_KEY);
     if (marked === today) return;
     for (const h of state.houses) {
       for (const r of h.rooms) {
         for (const t of r.tasks) t.completedToday = false;
       }
     }
-    localStorage.setItem(key, today);
+    localStorage.setItem(DAY_MARK_KEY, today);
+    if (isSupabaseReady() && supabase) {
+      const tasks = [];
+      for (const h of state.houses) {
+        for (const r of h.rooms) {
+          for (const t of r.tasks) tasks.push({ task: t, roomId: r.id });
+        }
+      }
+      Promise.all(tasks.map(({ task, roomId }) => upsertTaskToDb(task, roomId))).catch(console.error);
+    }
+  }
+
+  function showBootError(err) {
+    console.error("Boot error:", err);
+    const root = document.getElementById("app");
+    if (!root) return;
+    root.innerHTML = `
+      <div class="screen" style="padding:24px">
+        <h1 class="brand">Ошибка загрузки</h1>
+        <p class="sub">${String(err?.message || err).replace(/</g, "&lt;")}</p>
+        <p class="sub">Попробуйте обновить страницу (F5).</p>
+      </div>
+    `;
   }
 
   // ——— Auth ———
-  function enterAppAs(user) {
+  async function enterAppAs(user) {
+    if (!user.referralCode) {
+      user.referralCode = user.id;
+      user.referralsCount = user.referralsCount || 0;
+      user.referralBonusDays = user.referralBonusDays || 0;
+      upsertUser(user);
+    }
     currentUser = user;
     saveSession({ userId: user.id, email: user.email });
     ui.screen = "app";
     ui.authError = "";
     ui.modal = null;
-    ui.tab = "plan";
+    ui.tab = "homes";
     ui.view = "houses";
 
-    let existing = loadState();
-    if (!existing) {
-      existing = createFreshState();
-      markFirstLaunch();
+    let isNewUser = false;
+
+    if (isSupabaseReady() && supabase) {
+      try {
+        let existing = await loadUserData();
+        if (!existing?.houses?.length) {
+          existing = createFreshState();
+          markFirstLaunch();
+          isNewUser = true;
+        }
+        state = existing;
+      } catch (e) {
+        console.warn("loadUserData failed, fallback local:", e);
+        const local = loadState();
+        if (!local) {
+          state = createFreshState();
+          markFirstLaunch();
+          isNewUser = true;
+        } else {
+          state = local;
+        }
+      }
+    } else {
+      let existing = loadState();
+      if (!existing) {
+        existing = createFreshState();
+        markFirstLaunch();
+        isNewUser = true;
+      }
+      state = existing;
     }
-    state = existing;
+
     if (!state.profile) state.profile = {};
     state.profile.name = user.name;
     state.profile.email = user.email;
     state.profile.provider = user.provider;
     state.activeHouseId = state.activeHouseId || state.houses[0]?.id;
     ui.activeHouseId = state.activeHouseId;
+    migrateState();
+    applyReferralBonusToSubscription();
     saveState();
+    if (isNewUser && isSupabaseReady() && supabase) {
+      seedDefaultDataToDb(state).catch(console.error);
+    }
     continueBootAfterAuth();
   }
 
-  function logout() {
+  async function logout() {
+    if (isSupabaseReady() && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn(e);
+      }
+    }
     saveSession(null);
     currentUser = null;
     state = null;
     ui.screen = "auth";
     ui.modal = null;
     ui.authError = "";
-    ui.tab = "plan";
+    ui.tab = "homes";
     ui.view = "houses";
     clearIntervals();
     render();
@@ -406,7 +1755,7 @@
         return;
       }
       enterAppAs(user);
-      toast(`С возвращением, ${user.name}!`);
+      toast(getMessage("welcomeBack", { name: user.name }));
       return;
     }
 
@@ -417,9 +1766,16 @@
       name: cleaned.split("@")[0] || "Пользователь",
       provider: "email",
       createdAt: new Date().toISOString(),
+      referralCode: null,
+      referralsCount: 0,
+      referralBonusDays: 0,
+      referredBy: null,
     });
+    user.referralCode = user.id;
+    processReferralForNewUser(user);
+    upsertUser(user);
     enterAppAs(user);
-    toast("Аккаунт создан");
+    toast(getMessage("accountCreated"));
   }
 
   function completeSocialLogin(provider, name) {
@@ -435,13 +1791,20 @@
       name: displayName,
       provider,
       createdAt: new Date().toISOString(),
+      referralCode: null,
+      referralsCount: 0,
+      referralBonusDays: 0,
+      referredBy: null,
     });
+    user.referralCode = user.id;
+    processReferralForNewUser(user);
+    upsertUser(user);
     enterAppAs(user);
-    toast(`Вход через ${PROVIDER_LABELS[provider]}`);
+    toast(getMessage("accountCreated"));
   }
 
   // ——— Boot / retention ———
-  function boot() {
+  function bootLocal() {
     const session = loadSession();
     if (!session?.userId) {
       ui.screen = "auth";
@@ -471,6 +1834,7 @@
       markFirstLaunch();
       saveState();
       render();
+      initNotificationsOnLoad();
       return;
     }
 
@@ -486,7 +1850,56 @@
     continueBootAfterAuth();
   }
 
+  async function bootWithSupabase() {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        currentUser = await mergeProfileIntoUser(mapAuthUser(session.user));
+        ui.screen = "app";
+        state = await loadUserData();
+        if (!state?.houses?.length) {
+          state = createFreshState();
+          state.profile = {
+            name: currentUser.name,
+            email: currentUser.email,
+            provider: currentUser.provider,
+          };
+          state.activeHouseId = state.houses[0].id;
+          ui.activeHouseId = state.houses[0].id;
+          markFirstLaunch();
+          await seedDefaultDataToDb(state);
+        } else if (!state.profile) {
+          state.profile = {
+            name: currentUser.name,
+            email: currentUser.email,
+            provider: currentUser.provider,
+          };
+        }
+        ui.activeHouseId = state.activeHouseId || state.houses[0]?.id;
+        continueBootAfterAuth();
+        return;
+      }
+    } catch (e) {
+      console.warn("Supabase session failed:", e);
+    }
+    bootLocal();
+  }
+
+  function boot() {
+    if (isSupabaseReady() && supabase) {
+      bootWithSupabase().catch((e) => {
+        console.warn(e);
+        bootLocal();
+      });
+      return;
+    }
+    bootLocal();
+  }
+
   function continueBootAfterAuth() {
+    migrateState();
     const days = inactivityDays();
 
     if (days >= CODE_RETENTION_DAYS) {
@@ -515,7 +1928,9 @@
     refreshSubscriptionStatus();
     resetCompletedTodayIfNeeded();
     saveState();
+    checkGamificationEvents();
     render();
+    initNotificationsOnLoad();
   }
 
   function touchVisit() {
@@ -567,7 +1982,7 @@
     state.activeHouseId = state.houses[0].id;
     ui = {
       screen: currentUser ? "app" : "auth",
-      tab: "plan",
+      tab: "homes",
       view: "houses",
       activeHouseId: state.houses[0].id,
       modal: null,
@@ -611,7 +2026,9 @@
     }
     const house = makeDefaultHouse(name.trim() || "Новый дом");
     state.houses.push(house);
-    ui.view = "house";
+    ui.tab = "schedule";
+    ui.planView = "rooms";
+    ui.activeRoomId = null;
     ui.activeHouseId = house.id;
     state.activeHouseId = house.id;
     saveState();
@@ -652,13 +2069,52 @@
     const found = findTask(taskId);
     if (!found) return;
     const { task } = found;
+    const wasDone = task.completedToday;
     task.completedToday = !task.completedToday;
-    if (task.completedToday) {
-      task.lastCompleted = new Date().toISOString();
-      task.skipCount = 0;
+    try {
+      if (task.completedToday) {
+        task.lastCompleted = new Date().toISOString();
+        task.skipCount = 0;
+        ensureGamification().messyHouseShown = false;
+        recordActionStat(task.name);
+        addPoints(POINTS_PER_TASK, `Выполнено: ${task.name}`, "reward");
+        if (isFloorTaskName(task.name)) {
+          const area = Number(task.floorArea);
+          if (area > 0) {
+            const g = ensureGamification();
+            g.totalFloorAreaCleaned = (g.totalFloorAreaCleaned || 0) + area;
+          }
+        }
+        updateDailyLog();
+        triggerConfetti(taskId);
+        toast(getMessage("taskDone"));
+      } else if (wasDone) {
+        ensureGamification().actionStats[task.name] = Math.max(
+          0,
+          (ensureGamification().actionStats[task.name] || 1) - 1
+        );
+        if (isFloorTaskName(task.name)) {
+          const area = Number(task.floorArea);
+          if (area > 0) {
+            const g = ensureGamification();
+            g.totalFloorAreaCleaned = Math.max(0, (g.totalFloorAreaCleaned || 0) - area);
+          }
+        }
+        addPoints(-POINTS_PER_TASK, `Отмена: ${task.name}`, "penalty");
+      }
+    } catch (e) {
+      console.error("toggleTaskDone", e);
     }
     saveState();
+    upsertTaskToDb(task, found.room.id).catch(console.error);
     render();
+  }
+
+  function completeTask(taskId) {
+    const found = findTask(taskId);
+    if (!found) return;
+    if (found.task.completedToday) return;
+    toggleTaskDone(taskId);
   }
 
   function skipTask(taskId) {
@@ -666,12 +2122,16 @@
     if (!found) return;
     const { task } = found;
     task.skipCount = (task.skipCount || 0) + 1;
+    const g = ensureGamification();
+    g.todaySkips = (g.todaySkips || 0) + 1;
+    updateDailyLog();
     if (task.skipCount >= SKIP_WARN_AT) {
-      toast("Внимание: задача пропущена уже 3 раза! Пора сделать.");
+      toast(getMessage("skipWarn"));
     } else if (task.skipCount >= SKIP_RED_AT) {
-      toast("Задача краснеет — слишком много пропусков");
+      toast(getMessage("skipRed"));
     }
     saveState();
+    upsertTaskToDb(task, found.room.id).catch(console.error);
     render();
   }
 
@@ -680,27 +2140,134 @@
     if (!found) return;
     found.task.priority = prio;
     saveState();
+    upsertTaskToDb(found.task, found.room.id).catch(console.error);
     render();
   }
 
-  function addRoom(houseId, name) {
+  function addRoom(houseId, name, width = null, length = null) {
     const house = state.houses.find((h) => h.id === houseId);
     if (!house) return;
-    house.rooms.push(makeRoom(name.trim() || "Комната", []));
+    const room = makeRoom(name.trim() || "Комната", [], width, length);
+    house.rooms.push(room);
     saveState();
+    upsertRoomToDb(room, houseId).catch(console.error);
     render();
   }
 
-  function addTask(roomId, name, minutes) {
-    for (const h of state.houses) {
-      const room = h.rooms.find((r) => r.id === roomId);
-      if (room) {
-        room.tasks.push(makeTask(name.trim() || "Задача", "green", minutes || 15));
-        saveState();
-        render();
-        return;
-      }
+  function saveRoomDetails(roomId, data) {
+    const found = findRoomById(roomId);
+    if (!found) return false;
+    const { room } = found;
+    const name = String(data.name || "").trim();
+    if (!name) {
+      toast("Введите название комнаты");
+      return false;
     }
+    room.name = name;
+    const w = data.width !== "" && data.width != null ? Number(data.width) : null;
+    const l = data.length !== "" && data.length != null ? Number(data.length) : null;
+    room.width = w && w > 0 ? w : null;
+    room.length = l && l > 0 ? l : null;
+    room.area = calcRoomArea(room.width, room.length);
+    const houseId = findHouseIdForRoom(roomId);
+    saveState();
+    upsertRoomToDb(room, houseId).catch(console.error);
+    ui.modal = null;
+    render();
+    toast("Комната сохранена");
+    return true;
+  }
+
+  function saveTaskFromModal(roomId, data, taskId = null) {
+    const found = findRoomById(roomId);
+    if (!found) return false;
+    const { room } = found;
+    const name = data.name.trim();
+    if (!name) {
+      toast("Введите название задачи");
+      return false;
+    }
+    const minutes = Math.max(1, Number(data.minutes) || 15);
+    const period = data.period || { type: "daily" };
+
+    let task;
+    if (taskId) {
+      task = room.tasks.find((t) => t.id === taskId);
+      if (!task) return false;
+      const nameChanged = task.name !== name;
+      task.name = name;
+      task.estimatedMinutes = minutes;
+      task.period = period;
+      task.location = isShelfTaskName(name) ? data.location || null : null;
+      task.floorArea =
+        isFloorTaskName(name) && data.floorArea != null && data.floorArea !== ""
+          ? Math.max(0, Number(data.floorArea))
+          : null;
+      delete task.frequencyDays;
+      const fresh = defaultRecommendations(name);
+      if (nameChanged) {
+        task.products = defaultProducts(name);
+      }
+      task.recommendations = {
+        means: data.means || fresh.means,
+        inventory: data.inventory || fresh.inventory,
+        motions: data.technique || fresh.motions,
+        image: data.imageUrl || "",
+      };
+    } else {
+      task = makeTask(name, "green", minutes, period);
+      task.location = isShelfTaskName(name) ? data.location || null : null;
+      task.floorArea =
+        isFloorTaskName(name) && data.floorArea != null && data.floorArea !== ""
+          ? Math.max(0, Number(data.floorArea))
+          : isFloorTaskName(name)
+            ? room.area || null
+            : null;
+      task.recommendations = {
+        ...defaultRecommendations(name),
+        means: data.means || defaultRecommendations(name).means,
+        inventory: data.inventory || defaultRecommendations(name).inventory,
+        motions: data.technique || defaultRecommendations(name).motions,
+        image: data.imageUrl || "",
+      };
+      room.tasks.push(task);
+    }
+    saveState();
+    upsertTaskToDb(task, roomId).catch(console.error);
+    ui.modal = null;
+    render();
+    toast(taskId ? "Задача обновлена" : "Задача добавлена");
+    return true;
+  }
+
+  function renameHouse(houseId, newName) {
+    const house = state.houses.find((h) => h.id === houseId);
+    if (!house) return;
+    const trimmed = String(newName || "").trim();
+    if (!trimmed) {
+      toast("Введите название дома");
+      return;
+    }
+    house.name = trimmed;
+    saveState();
+    ui.modal = null;
+    render();
+    toast("Название дома обновлено");
+  }
+
+  function renameRoom(roomId, newName) {
+    const found = findRoomById(roomId);
+    if (!found) return;
+    const trimmed = String(newName || "").trim();
+    if (!trimmed) {
+      toast("Введите название комнаты");
+      return;
+    }
+    found.room.name = trimmed;
+    saveState();
+    ui.modal = null;
+    render();
+    toast("Название комнаты обновлено");
   }
 
   function deleteRoom(roomId) {
@@ -709,6 +2276,10 @@
     const before = house.rooms.length;
     house.rooms = house.rooms.filter((r) => r.id !== roomId);
     if (house.rooms.length === before) return;
+    if (ui.activeRoomId === roomId) {
+      ui.activeRoomId = null;
+      ui.planView = "rooms";
+    }
     saveState();
     ui.modal = null;
     render();
@@ -729,6 +2300,186 @@
         }
       }
     }
+  }
+
+  function taskFormFieldsHtml(roomId, task = null) {
+    const roomInfo = findRoomById(roomId);
+    const room = roomInfo?.room;
+    const roomName = room?.name || "";
+    const actions = getRoomActions(roomName);
+    const currentName = task?.name || "";
+    const inList = actions.includes(currentName);
+    const selectedAction = inList ? currentName : "__custom__";
+    const period = normalizePeriod(task || {});
+    const minutes = task?.estimatedMinutes ?? 15;
+    const isDaily = period.type === "daily";
+    const periodCount = period.type === "days" ? period.count || 1 : 1;
+    const periodValue = period.type === "days" ? period.value || 1 : 1;
+    const rec = task?.recommendations || defaultRecommendations(currentName);
+    const showShelf = isShelfTaskName(currentName);
+    const showFloor = isFloorTaskName(currentName);
+    const roomArea = room?.area ?? calcRoomArea(room?.width, room?.length);
+    const floorAreaVal =
+      task?.floorArea != null ? task.floorArea : showFloor && roomArea ? roomArea : "";
+
+    const actionOptions = actions
+      .map(
+        (a) =>
+          `<option value="${escapeHtml(a)}" ${a === selectedAction ? "selected" : ""}>${escapeHtml(a)}</option>`
+      )
+      .join("");
+
+    const locationOptions = SHELF_LOCATIONS.map(
+      (loc) =>
+        `<option value="${escapeHtml(loc)}" ${task?.location === loc ? "selected" : ""}>${escapeHtml(loc)}</option>`
+    ).join("");
+
+    return `
+      <div class="field">
+        <label for="task-action-select">Действие из списка</label>
+        <select id="task-action-select" data-room-id="${escapeHtml(roomId)}">
+          ${actionOptions}
+          <option value="__custom__" ${selectedAction === "__custom__" ? "selected" : ""}>Ввести свои данные</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="task-name-input">Название задачи</label>
+        <input type="text" id="task-name-input" value="${escapeHtml(currentName)}" maxlength="60" placeholder="Выберите из списка или введите своё" />
+      </div>
+      <div class="field task-extra-field ${showShelf ? "" : "hidden"}" id="task-location-wrap">
+        <label for="task-location-select">Где находится?</label>
+        <select id="task-location-select">
+          <option value="">— выберите —</option>
+          ${locationOptions}
+        </select>
+      </div>
+      <div class="field task-extra-field ${showFloor ? "" : "hidden"}" id="task-floor-area-wrap">
+        <label for="task-floor-area-input">Площадь (м²)</label>
+        <input type="number" id="task-floor-area-input" min="0" step="0.01" value="${floorAreaVal !== "" && floorAreaVal != null ? floorAreaVal : ""}" placeholder="${roomArea ? `Из комнаты: ${roomArea}` : "Укажите площадь"}" />
+        ${roomArea ? `<p class="field-hint">Площадь комнаты: ${roomArea} м²</p>` : `<p class="field-hint">Укажите размеры комнаты, чтобы подставить площадь автоматически</p>`}
+      </div>
+      <div class="field period-field">
+        <span class="field-label">Периодичность</span>
+        <label class="period-daily-check">
+          <input type="checkbox" id="period-daily-check" ${isDaily ? "checked" : ""} />
+          Каждый день
+        </label>
+        <div class="period-interval-row ${isDaily ? "hidden" : ""}" id="period-interval-wrap">
+          <input type="number" id="period-count" min="1" max="99" value="${periodCount}" aria-label="Раз" />
+          <span>раз</span>
+          <input type="number" id="period-value" min="1" max="365" value="${periodValue}" aria-label="В дней" />
+          <span>в дней</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="task-min-input">Минуты</label>
+        <input type="number" id="task-min-input" value="${minutes}" min="1" max="480" />
+      </div>
+      <div class="task-rec-fields">
+        <p class="section-title" style="margin-top:8px">Рекомендации</p>
+        <div class="field">
+          <label for="task-means-input">Средство</label>
+          <input type="text" id="task-means-input" value="${escapeHtml(rec.means || "")}" />
+        </div>
+        <div class="field">
+          <label for="task-inventory-input">Инвентарь</label>
+          <input type="text" id="task-inventory-input" value="${escapeHtml(rec.inventory || "")}" />
+        </div>
+        <div class="field">
+          <label for="task-technique-input">Пошаговая инструкция</label>
+          <textarea id="task-technique-input" rows="3" placeholder="Опишите шаги выполнения">${escapeHtml(rec.motions || "")}</textarea>
+        </div>
+        <div class="field">
+          <label for="task-image-input">Своя картинка (URL)</label>
+          <input type="url" id="task-image-input" value="${escapeHtml(rec.image || "")}" placeholder="Оставьте пустым — подберём по названию" />
+        </div>
+      </div>
+    `;
+  }
+
+  function updateTaskFormExtras() {
+    const nameInput = document.getElementById("task-name-input");
+    const name = nameInput?.value?.trim() || "";
+    const shelfWrap = document.getElementById("task-location-wrap");
+    const floorWrap = document.getElementById("task-floor-area-wrap");
+    const floorInput = document.getElementById("task-floor-area-input");
+    if (shelfWrap) shelfWrap.classList.toggle("hidden", !isShelfTaskName(name));
+    if (floorWrap) floorWrap.classList.toggle("hidden", !isFloorTaskName(name));
+    if (isFloorTaskName(name) && floorInput && !floorInput.value) {
+      const roomId = document.getElementById("task-action-select")?.dataset?.roomId;
+      const room = roomId ? findRoomById(roomId)?.room : null;
+      const roomArea = room?.area ?? calcRoomArea(room?.width, room?.length);
+      if (roomArea) floorInput.value = roomArea;
+    }
+  }
+
+  function updatePeriodFieldsVisibility() {
+    const daily = document.getElementById("period-daily-check")?.checked;
+    const wrap = document.getElementById("period-interval-wrap");
+    if (wrap) wrap.classList.toggle("hidden", !!daily);
+    const countEl = document.getElementById("period-count");
+    const valueEl = document.getElementById("period-value");
+    if (countEl) countEl.disabled = !!daily;
+    if (valueEl) valueEl.disabled = !!daily;
+  }
+
+  function bindTaskFormHandlers() {
+    const select = document.getElementById("task-action-select");
+    const nameInput = document.getElementById("task-name-input");
+    if (select && nameInput) {
+      select.onchange = () => {
+        if (select.value === "__custom__") {
+          nameInput.value = "";
+          nameInput.focus();
+        } else {
+          nameInput.value = select.value;
+          const fresh = defaultRecommendations(select.value);
+          const means = document.getElementById("task-means-input");
+          const inv = document.getElementById("task-inventory-input");
+          const tech = document.getElementById("task-technique-input");
+          if (means && !means.value) means.value = fresh.means || "";
+          if (inv && !inv.value) inv.value = fresh.inventory || "";
+          if (tech && !tech.value) tech.value = fresh.motions || "";
+        }
+        updateTaskFormExtras();
+      };
+      nameInput.oninput = () => {
+        const val = nameInput.value.trim();
+        const match = [...select.options].find((o) => o.value === val && o.value !== "__custom__");
+        if (match) select.value = val;
+        else select.value = "__custom__";
+        updateTaskFormExtras();
+      };
+    }
+    const dailyCheck = document.getElementById("period-daily-check");
+    if (dailyCheck) dailyCheck.onchange = updatePeriodFieldsVisibility;
+    updatePeriodFieldsVisibility();
+    updateTaskFormExtras();
+  }
+
+  function readTaskFormData() {
+    const name = String(document.getElementById("task-name-input")?.value || "").trim();
+    const minutes = document.getElementById("task-min-input")?.value || 15;
+    const daily = document.getElementById("period-daily-check")?.checked;
+    let period;
+    if (daily) {
+      period = { type: "daily" };
+    } else {
+      period = {
+        type: "days",
+        count: Math.max(1, Number(document.getElementById("period-count")?.value) || 1),
+        value: Math.max(1, Number(document.getElementById("period-value")?.value) || 1),
+      };
+    }
+    const location = document.getElementById("task-location-select")?.value || null;
+    const floorAreaRaw = document.getElementById("task-floor-area-input")?.value;
+    const floorArea =
+      floorAreaRaw !== "" && floorAreaRaw != null ? Number(floorAreaRaw) : null;
+    const means = document.getElementById("task-means-input")?.value ?? "";
+    const inventory = document.getElementById("task-inventory-input")?.value ?? "";
+    const technique = document.getElementById("task-technique-input")?.value ?? "";
+    const imageUrl = document.getElementById("task-image-input")?.value?.trim() ?? "";
+    return { name, minutes, period, location, floorArea, means, inventory, technique, imageUrl };
   }
 
   // ——— Render helpers ———
@@ -815,9 +2566,12 @@
 
   function navHtml() {
     return `
-      <nav class="bottom-nav">
-        <button type="button" class="nav-btn ${ui.tab === "plan" ? "active" : ""}" data-action="tab-plan">
-          <span>📋</span> План
+      <nav class="bottom-nav bottom-nav-4">
+        <button type="button" class="nav-btn ${ui.tab === "homes" ? "active" : ""}" data-action="tab-homes">
+          <span>🏠</span> Дома
+        </button>
+        <button type="button" class="nav-btn ${ui.tab === "schedule" ? "active" : ""}" data-action="tab-schedule">
+          <span>📅</span> План
         </button>
         <button type="button" class="nav-btn ${ui.tab === "shop" ? "active" : ""}" data-action="tab-shop">
           <span>🛒</span> Магазин
@@ -885,20 +2639,110 @@
       name: state?.profile?.name || "Гость",
       email: state?.profile?.email || "—",
       provider: state?.profile?.provider || "email",
+      referralsCount: 0,
+      referralBonusDays: 0,
     };
+    const g = ensureGamification();
     const name = user.name || "Пользователь";
-    const letter = name.trim().charAt(0).toUpperCase() || "?";
     const providerLabel = PROVIDER_LABELS[user.provider] || user.provider || "Почта";
+    const notifSettings = syncNotifPermission();
+    const notifChecked = notifSettings.enabled ? "checked" : "";
+    const level = getLevelInfo(g.points);
+    const statsEntries = Object.entries(g.actionStats || {}).sort((a, b) => b[1] - a[1]);
+    const totalFloor = g.totalFloorAreaCleaned || 0;
+    const floorStatHtml =
+      totalFloor > 0
+        ? `<li class="floor-stat"><span>Вымыто полов</span><strong>${totalFloor} м²</strong></li>`
+        : "";
+
+    const statsHtml = statsEntries.length
+      ? floorStatHtml +
+        statsEntries
+          .map(
+            ([action, count]) =>
+              `<li><span>${escapeHtml(action)}</span><strong>${count} раз</strong></li>`
+          )
+          .join("")
+      : floorStatHtml ||
+        `<li class="empty-stat">Пока нет выполненных дел — начните с одной задачи!</li>`;
+
+    const historyHtml = (g.rewardHistory || [])
+      .slice(0, 8)
+      .map(
+        (h) =>
+          `<li class="history-${h.kind || "reward"}">
+            <span>${escapeHtml(h.title)}</span>
+            <strong>${h.points > 0 ? "+" : ""}${h.points}</strong>
+          </li>`
+      )
+      .join("");
+
+    const toneOptions = TONE_OPTIONS.map(
+      (t) =>
+        `<option value="${t.id}" ${g.tone === t.id ? "selected" : ""}>${escapeHtml(t.label)}</option>`
+    ).join("");
+
+    const presetAvatars = Object.entries(AVATAR_PRESETS)
+      .map(
+        ([id, p]) =>
+          `<button type="button" class="avatar-preset ${g.avatar?.type === "preset" && g.avatar?.value === id ? "active" : ""}" data-action="set-avatar-preset" data-preset="${id}" title="${escapeHtml(p.label)}">${p.emoji}</button>`
+      )
+      .join("");
+
+    const referralCount = user.referralsCount || 0;
+    const bonusDays = (state.subscription.bonusDays || 0) + (user.referralBonusDays || 0);
 
     return `
       <div class="screen profile-screen">
         <h1 class="brand">Профиль</h1>
-        <p class="sub">Личный кабинет и выход из аккаунта.</p>
+        <p class="sub">${escapeHtml(getMessage("welcomeBack", { name }).split("!")[0])}!</p>
         <div class="profile-card">
-          <div class="avatar" aria-hidden="true">${escapeHtml(letter)}</div>
+          <div class="avatar avatar-lg">${getAvatarHtml(user, g)}</div>
           <h2 class="profile-name">${escapeHtml(name)}</h2>
           <p class="profile-meta">Аккаунт: ${escapeHtml(user.email || "—")}</p>
           <p class="profile-meta">Провайдер: ${escapeHtml(providerLabel)}</p>
+
+          <div class="avatar-picker">
+            <p class="picker-label">Аватар</p>
+            <div class="avatar-presets">${presetAvatars}</div>
+            <label class="btn btn-ghost btn-sm avatar-upload-btn">
+              Загрузить фото
+              <input type="file" accept="image/*" data-action="avatar-upload" hidden />
+            </label>
+          </div>
+
+          <div class="level-block">
+            <div class="level-head">
+              <span class="level-name">${escapeHtml(level.name)}</span>
+              <span class="level-pts">${level.points} / 1000 очков</span>
+            </div>
+            <div class="level-bar"><div class="level-fill" style="width:${level.progressPct}%"></div></div>
+            <p class="level-next">${level.nextName ? `До «${escapeHtml(level.nextName)}»: ${level.nextMin} очков` : "Максимальный уровень!"}</p>
+          </div>
+
+          <div class="stats-block">
+            <p class="picker-label">Статистика действий</p>
+            <ul class="stats-list">${statsHtml}</ul>
+          </div>
+
+          <div class="referral-block">
+            <p class="picker-label">Реферальная программа</p>
+            <p class="profile-meta">Приглашено друзей: <strong>${referralCount}</strong></p>
+            <p class="profile-meta">Бонусных дней подписки: <strong>+${bonusDays}</strong></p>
+          </div>
+
+          ${historyHtml ? `<div class="history-block"><p class="picker-label">История наград</p><ul class="history-list">${historyHtml}</ul></div>` : ""}
+
+          <div class="field" style="margin-top:16px">
+            <label for="tone-select">Тон общения</label>
+            <select id="tone-select" data-action="tone-select">${toneOptions}</select>
+          </div>
+
+          <label class="notif-toggle">
+            <input type="checkbox" data-action="toggle-notifications" ${notifChecked} />
+            <span>Включить уведомления</span>
+          </label>
+          <p class="profile-meta notif-status">Статус: ${escapeHtml(notifPermissionLabel())}</p>
           <button type="button" class="btn btn-ghost" style="width:100%;margin-top:18px" data-action="logout">Выйти</button>
         </div>
       </div>
@@ -908,9 +2752,9 @@
   function housesView() {
     const cards = state.houses
       .map((h) => {
-        const tasks = h.rooms.reduce((n, r) => n + r.tasks.length, 0);
+        const tasks = h.rooms.reduce((n, r) => n + r.tasks.filter(isTaskDueToday).length, 0);
         const done = h.rooms.reduce(
-          (n, r) => n + r.tasks.filter((t) => t.completedToday).length,
+          (n, r) => n + r.tasks.filter((t) => isTaskDueToday(t) && t.completedToday).length,
           0
         );
         return `
@@ -936,110 +2780,404 @@
     `;
   }
 
-  function houseView() {
-    const house = getActiveHouse();
-    if (!house) return housesView();
-
+  function planHouseTopBar(house) {
     const options = state.houses
       .map(
         (h) =>
           `<option value="${h.id}" ${h.id === house.id ? "selected" : ""}>${escapeHtml(h.name)}</option>`
       )
       .join("");
+    return `
+      <div class="top-bar">
+        <select class="house-select" data-action="switch-house">${options}</select>
+        <button type="button" class="edit-house-btn" data-action="prompt-edit-house" title="Редактировать название дома" aria-label="Редактировать дом">✏️</button>
+      </div>
+    `;
+  }
 
-    const roomsHtml = house.rooms
-      .map((room) => {
-        const tasksHtml = room.tasks
-          .map((task) => {
-            const prio = effectivePriority(task);
-            const skipChip =
-              task.skipCount >= SKIP_WARN_AT
-                ? `<span class="chip danger">пропусков: ${task.skipCount}</span>`
-                : task.skipCount > 0
-                  ? `<span class="chip warn">пропусков: ${task.skipCount}</span>`
-                  : "";
-            const timed =
-              task.lastTimedSeconds != null
-                ? `<span class="chip">⏱ ${formatTime(task.lastTimedSeconds)}</span>`
-                : "";
-            const rec = task.recommendations || {};
-            const products = (task.products || [])
-              .map(
-                (p) =>
-                  `<a class="product-link" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">
-                    ${escapeHtml(p.name)}
-                    <span class="product-price">${escapeHtml(p.price || "")}</span>
-                  </a>`
-              )
-              .join("");
+  function planSubTabsHtml() {
+    const v = ui.planView;
+    const roomsActive = v === "rooms" || v === "room";
+    return `
+      <div class="plan-subtabs" role="tablist">
+        <button type="button" class="plan-subtab ${roomsActive ? "active" : ""}" data-action="plan-sub-rooms" role="tab">Комнаты</button>
+        <button type="button" class="plan-subtab ${v === "today" ? "active" : ""}" data-action="plan-sub-today" role="tab">Сегодня</button>
+        <button type="button" class="plan-subtab ${v === "calendar" ? "active" : ""}" data-action="plan-sub-calendar" role="tab">Календарь</button>
+      </div>
+    `;
+  }
 
-            return `
-              <div class="task prio-${prio} ${task.completedToday ? "done" : ""}" data-task="${task.id}">
-                <div class="task-row">
-                  <input type="checkbox" class="task-check" data-action="toggle-done" data-id="${task.id}"
-                    ${task.completedToday ? "checked" : ""} />
-                  <div class="task-body">
-                    <p class="task-name">${escapeHtml(task.name)}</p>
-                    <div class="task-meta">
-                      <span class="chip">~${task.estimatedMinutes} мин</span>
-                      ${skipChip}${timed}
-                      <div class="traffic" title="Приоритет">
-                        <button type="button" class="t-red ${task.priority === "red" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="red" title="Высокий"></button>
-                        <button type="button" class="t-yellow ${task.priority === "yellow" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="yellow" title="Средний"></button>
-                        <button type="button" class="t-green ${task.priority === "green" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="green" title="Низкий"></button>
-                      </div>
-                    </div>
-                    <div class="task-actions">
-                      <button type="button" class="btn btn-sm" data-action="skip" data-id="${task.id}">Пропустить</button>
-                      <button type="button" class="btn btn-sm" data-action="open-timer" data-id="${task.id}">Засечь время</button>
-                      <button type="button" class="btn btn-sm" data-action="toggle-rec" data-id="${task.id}">Рекомендации</button>
-                      <button type="button" class="btn btn-sm btn-delete" data-action="prompt-delete-task" data-id="${task.id}" data-name="${escapeHtml(task.name)}">🗑 Удалить задачу</button>
-                    </div>
-                    <div class="rec-block ${task.showRec ? "open" : ""}">
-                      <div class="rec-grid">
-                        <div class="rec-item"><strong>Средство</strong>${escapeHtml(rec.means || "—")}</div>
-                        <div class="rec-item"><strong>Инвентарь</strong>${escapeHtml(rec.inventory || "—")}</div>
-                        <div class="rec-item"><strong>Движения</strong>${escapeHtml(rec.motions || "—")}</div>
-                      </div>
-                      ${rec.image ? `<img class="rec-img" src="${escapeHtml(rec.image)}" alt="" loading="lazy" />` : ""}
-                      ${products ? `<div class="product-links">${products}</div>` : ""}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            `;
-          })
-          .join("");
+  function renderTaskCard(task, room, context = "room") {
+    const prio = effectivePriority(task);
+    const skipChip =
+      task.skipCount >= SKIP_WARN_AT
+        ? `<span class="chip danger">пропусков: ${task.skipCount}</span>`
+        : task.skipCount > 0
+          ? `<span class="chip warn">пропусков: ${task.skipCount}</span>`
+          : "";
+    const timed =
+      task.lastTimedSeconds != null
+        ? `<span class="chip">⏱ ${formatTime(task.lastTimedSeconds)}</span>`
+        : "";
+    const dueToday = isTaskDueToday(task);
+    const dueChip =
+      context === "room" && dueToday ? `<span class="chip accent">сегодня</span>` : "";
+    const freqChip = `<span class="chip">${escapeHtml(periodLabel(task))}</span>`;
+    const rec = task.recommendations || {};
+    const displayImage = getTaskDisplayImage(task);
+    const locationChip = task.location
+      ? `<span class="chip">📍 ${escapeHtml(task.location)}</span>`
+      : "";
+    const areaChip =
+      task.floorArea != null && task.floorArea > 0
+        ? `<span class="chip">${task.floorArea} м²</span>`
+        : "";
+    const instructionHtml = rec.motions
+      ? `<p class="task-instruction"><strong>Пошаговая инструкция:</strong> ${escapeHtml(rec.motions)}</p>`
+      : "";
+    const products = (task.products || [])
+      .map(
+        (p) =>
+          `<a class="product-link" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">
+            ${escapeHtml(p.name)}
+            <span class="product-price">${escapeHtml(p.price || "")}</span>
+          </a>`
+      )
+      .join("");
 
-        return `
-          <section class="room">
-            <div class="room-head">
-              <h2>${escapeHtml(room.name)}</h2>
-              <div class="room-head-actions">
-                <button type="button" class="btn btn-sm btn-accent-soft" data-action="prompt-add-task" data-room="${room.id}">+ Задача</button>
-                <button type="button" class="btn btn-sm btn-delete" data-action="prompt-delete-room" data-id="${room.id}" data-name="${escapeHtml(room.name)}">🗑 Удалить комнату</button>
+    const doneClass = task.completedToday ? "done" : "";
+    const justDone = ui.justCompletedId === task.id ? " just-completed" : "";
+
+    return `
+      <div class="task prio-${prio} ${doneClass}${justDone}" data-task="${task.id}">
+        <div class="task-row">
+          <div class="task-body">
+            <p class="task-name">${escapeHtml(task.name)}</p>
+            ${instructionHtml}
+            <div class="task-meta">
+              <span class="chip">~${task.estimatedMinutes} мин</span>
+              ${freqChip}${dueChip}${locationChip}${areaChip}${skipChip}${timed}
+              <div class="traffic" title="Приоритет">
+                <button type="button" class="t-red ${task.priority === "red" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="red" title="Высокий"></button>
+                <button type="button" class="t-yellow ${task.priority === "yellow" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="yellow" title="Средний"></button>
+                <button type="button" class="t-green ${task.priority === "green" ? "on" : ""}" data-action="set-prio" data-id="${task.id}" data-prio="green" title="Низкий"></button>
               </div>
             </div>
-            <div class="task-list">${tasksHtml || '<p class="empty" style="padding:12px">Нет задач</p>'}</div>
-          </section>
+            <div class="task-primary-actions">
+              <button type="button" class="btn btn-done ${task.completedToday ? "is-done" : ""}" data-action="complete-task" data-id="${task.id}">
+                ${task.completedToday ? "✓ Готово!" : "✓ Выполнено"}
+              </button>
+              <button type="button" class="btn btn-skip" data-action="skip" data-id="${task.id}">Пропустить</button>
+            </div>
+            <div class="task-actions">
+              <button type="button" class="btn btn-sm" data-action="open-timer" data-id="${task.id}">Засечь время</button>
+              <button type="button" class="btn btn-sm btn-remind" data-action="remind-task" data-id="${task.id}">🔔 Напомнить</button>
+              <button type="button" class="btn btn-sm" data-action="toggle-rec" data-id="${task.id}">Рекомендации</button>
+              <button type="button" class="btn btn-sm" data-action="prompt-edit-task" data-id="${task.id}" data-room="${room.id}">✏️ Изменить</button>
+              <button type="button" class="btn btn-sm btn-delete" data-action="prompt-delete-task" data-id="${task.id}" data-name="${escapeHtml(task.name)}">🗑 Удалить</button>
+            </div>
+            <div class="rec-block ${task.showRec ? "open" : ""}">
+              <div class="rec-grid">
+                <div class="rec-item"><strong>Средство</strong>${escapeHtml(rec.means || "—")}</div>
+                <div class="rec-item"><strong>Инвентарь</strong>${escapeHtml(rec.inventory || "—")}</div>
+                <div class="rec-item"><strong>Пошаговая инструкция</strong>${escapeHtml(rec.motions || "—")}</div>
+              </div>
+              ${displayImage ? `<img class="rec-img" src="${escapeHtml(displayImage)}" alt="" loading="lazy" />` : ""}
+              ${products ? `<div class="product-links">${products}</div>` : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function roomsListView(house) {
+    const cards = house.rooms
+      .map((room) => {
+        const count = room.tasks.length;
+        const todayCount = room.tasks.filter(isTaskDueToday).length;
+        return `
+          <button type="button" class="room-card" data-action="open-room" data-id="${room.id}">
+            <div class="room-card-icon">${roomIcon(room.name)}</div>
+            <div class="room-card-body">
+              <h3>${escapeHtml(room.name)}</h3>
+              <p class="house-meta">${count} ${pluralTasks(count)}${todayCount ? ` · ${todayCount} сегодня` : ""}${room.area ? ` · ${room.area} м²` : ""}</p>
+            </div>
+            <span class="house-arrow">›</span>
+          </button>
         `;
       })
       .join("");
 
     return `
-      <div class="screen">
-        <div class="top-bar">
-          <button type="button" class="back-btn" data-action="back-houses" aria-label="Назад">‹</button>
-          <select class="house-select" data-action="switch-house">${options}</select>
+      <div class="room-grid">
+        ${cards || '<p class="empty">Пока нет комнат — добавьте первую</p>'}
+      </div>
+      <button type="button" class="btn btn-primary" data-action="prompt-add-room">➕ Добавить комнату</button>
+    `;
+  }
+
+  function roomDetailView(house, room) {
+    const tasksHtml = room.tasks.length
+      ? room.tasks.map((task) => renderTaskCard(task, room)).join("")
+      : '<p class="empty" style="padding:20px">В этой комнате пока нет задач</p>';
+
+    return `
+      <div class="room-detail-head">
+        <button type="button" class="back-btn" data-action="back-rooms" aria-label="Назад к комнатам">‹</button>
+        <h2 class="room-detail-title">${escapeHtml(roomDisplayName(room.name))}</h2>
+        <button type="button" class="edit-house-btn" data-action="prompt-edit-room" data-id="${room.id}" title="Редактировать название" aria-label="Редактировать комнату">✏️</button>
+      </div>
+      <div class="room-detail-actions">
+        <button type="button" class="btn btn-accent-soft" data-action="prompt-add-task" data-room="${room.id}">➕ Добавить задачу</button>
+        <button type="button" class="btn btn-ghost btn-delete" data-action="prompt-delete-room" data-id="${room.id}" data-name="${escapeHtml(room.name)}">🗑 Удалить комнату</button>
+      </div>
+      <div class="task-list">${tasksHtml}</div>
+    `;
+  }
+
+  function todayPlanView(house) {
+    const progress = getTodayProgress(house);
+    const progressHtml =
+      progress.total > 0
+        ? `<p class="today-progress">Выполнено <strong>${progress.done}</strong> из <strong>${progress.total}</strong></p>`
+        : "";
+
+    const roomsHtml = house.rooms
+      .map((room) => {
+        const todayTasks = room.tasks.filter(isTaskDueToday);
+        if (!todayTasks.length) return "";
+        const tasksHtml = todayTasks.map((task) => renderTaskCard(task, room, "today")).join("");
+        return `
+          <section class="room">
+            <div class="room-head">
+              <h2>${escapeHtml(roomDisplayName(room.name))}</h2>
+              <button type="button" class="btn btn-sm btn-accent-soft" data-action="open-room" data-id="${room.id}">В комнату</button>
+            </div>
+            <div class="task-list">${tasksHtml}</div>
+          </section>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+
+    const roomsBlock =
+      roomsHtml ||
+      '<p class="empty" style="padding:20px">На сегодня задач нет — отличная работа!</p>';
+
+    return `
+      <div class="today-block">
+        <p class="section-title" style="margin-top:0">Что сделать за X минут?</p>
+        ${progressHtml}
+        <div class="time-pick-row">
+          <label class="time-pick-label" for="custom-minutes-input">Минут</label>
+          <input type="number" id="custom-minutes-input" class="time-pick-input" min="1" max="480" value="30" aria-label="Количество минут" />
+          <button type="button" class="btn btn-primary time-pick-btn" data-action="suggest-custom-time">Подобрать</button>
         </div>
-        <div class="quick-actions">
-          <button type="button" class="btn btn-accent-soft" data-action="suggest-30">Что сделать за 30 минут?</button>
-          <button type="button" class="btn btn-accent-soft" data-action="daily-report">Отчёт за день</button>
+      </div>
+      <div class="quick-actions">
+        <button type="button" class="btn btn-accent-soft" data-action="daily-report">Отчёт за день</button>
+      </div>
+      ${roomsBlock}
+      ${ui.confetti ? '<div class="confetti-layer" aria-hidden="true"></div>' : ""}
+    `;
+  }
+
+  function planScreenView() {
+    const house = getActiveHouse();
+    if (!house) {
+      return `
+        <div class="screen">
+          <h1 class="brand">План</h1>
+          <p class="empty">Сначала выберите или создайте дом на вкладке «Дома».</p>
         </div>
-        ${roomsHtml}
-        <button type="button" class="btn btn-ghost add-room-row" data-action="prompt-add-room" style="width:100%">+ Добавить комнату</button>
+      `;
+    }
+
+    let content = "";
+    const showSubTabs = ui.planView !== "room";
+
+    if (ui.planView === "room" && ui.activeRoomId) {
+      const room = house.rooms.find((r) => r.id === ui.activeRoomId);
+      if (room) {
+        content = roomDetailView(house, room);
+      } else {
+        ui.planView = "rooms";
+        ui.activeRoomId = null;
+        content = roomsListView(house);
+      }
+    } else if (ui.planView === "today") {
+      content = todayPlanView(house);
+    } else if (ui.planView === "calendar") {
+      content = calendarViewBody();
+    } else {
+      ui.planView = "rooms";
+      content = roomsListView(house);
+    }
+
+    return `
+      <div class="screen plan-screen">
+        <h1 class="brand">План</h1>
+        <p class="sub">${escapeHtml(house.name)} — комнаты, задачи на сегодня и календарь.</p>
+        ${planHouseTopBar(house)}
+        ${showSubTabs ? planSubTabsHtml() : ""}
+        ${content}
       </div>
     `;
+  }
+
+  function houseView() {
+    return planScreenView();
+  }
+
+  function renderPlanTaskItem(item, showDate = false) {
+    const { house, room, task } = item;
+    const prio = effectivePriority(task);
+    const done = task.completedToday && isTaskDueToday(task);
+    return `
+      <div class="plan-task-item prio-${prio} ${done ? "done" : ""}">
+        <div>
+          <strong>${escapeHtml(task.name)}</strong>
+          <p class="house-meta">${escapeHtml(house.name)} · ${escapeHtml(roomDisplayName(room.name))} · ${escapeHtml(periodLabel(task))}</p>
+        </div>
+        <div class="plan-task-actions">
+          <button type="button" class="btn btn-sm btn-done" data-action="plan-complete-task" data-id="${task.id}">✓</button>
+          <button type="button" class="btn btn-sm" data-action="plan-edit-task" data-id="${task.id}" data-room="${room.id}">✏️</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function calendarViewBody() {
+    if (!ui.calendar) ui.calendar = { mode: "day", date: new Date().toISOString(), pickMonth: null };
+    const cal = ui.calendar;
+    const baseDate = new Date(cal.date);
+    const mode = cal.mode || "day";
+    const todayKey = dateKey(new Date());
+
+    const tabs = ["day", "week", "month", "year"]
+      .map((m) => {
+        const labels = { day: "День", week: "Неделя", month: "Месяц", year: "Год" };
+        return `<button type="button" class="cal-tab ${mode === m ? "active" : ""}" data-action="cal-mode" data-mode="${m}">${labels[m]}</button>`;
+      })
+      .join("");
+
+    let body = "";
+
+    if (mode === "day") {
+      const d = startOfDay(baseDate);
+      const tasks = getTasksForDate(d);
+      const list = tasks.length
+        ? tasks.map((t) => renderPlanTaskItem(t)).join("")
+        : `<p class="empty">На ${formatDateRu(d)} задач нет</p>`;
+      body = `
+        <div class="cal-nav">
+          <button type="button" class="back-btn" data-action="cal-prev">‹</button>
+          <span class="cal-title">${escapeHtml(formatDateRu(d))}</span>
+          <button type="button" class="back-btn" data-action="cal-next">›</button>
+        </div>
+        <input type="date" class="cal-date-input" data-action="cal-pick-date" value="${dateKey(d)}" />
+        <div class="plan-task-list">${list}</div>
+      `;
+    } else if (mode === "week") {
+      const start = startOfDay(baseDate);
+      const dayOfWeek = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - dayOfWeek);
+      const days = [];
+      for (let i = 0; i < 7; i++) days.push(addDays(start, i));
+      body = `
+        <div class="cal-nav">
+          <button type="button" class="back-btn" data-action="cal-prev">‹</button>
+          <span class="cal-title">Неделя ${dateKey(days[0]).slice(5)} – ${dateKey(days[6]).slice(5)}</span>
+          <button type="button" class="back-btn" data-action="cal-next">›</button>
+        </div>
+        ${days
+          .map((d) => {
+            const tasks = getTasksForDate(d);
+            const isToday = dateKey(d) === todayKey;
+            return `
+              <section class="cal-week-day ${isToday ? "is-today" : ""}">
+                <h3>${escapeHtml(formatDateRu(d))}</h3>
+                <div class="plan-task-list">
+                  ${tasks.length ? tasks.map((t) => renderPlanTaskItem(t)).join("") : '<p class="empty" style="padding:8px">—</p>'}
+                </div>
+              </section>
+            `;
+          })
+          .join("")}
+      `;
+    } else if (mode === "month") {
+      const y = baseDate.getFullYear();
+      const m = baseDate.getMonth();
+      const first = new Date(y, m, 1);
+      const last = new Date(y, m + 1, 0);
+      const startPad = (first.getDay() + 6) % 7;
+      const cells = [];
+      for (let i = 0; i < startPad; i++) cells.push(null);
+      for (let d = 1; d <= last.getDate(); d++) cells.push(new Date(y, m, d));
+      const selectedKey = cal.selectedDay || todayKey;
+      const selectedTasks = getTasksForDate(parseDateKey(selectedKey));
+      body = `
+        <div class="cal-nav">
+          <button type="button" class="back-btn" data-action="cal-prev">‹</button>
+          <span class="cal-title">${MONTH_NAMES[m]} ${y}</span>
+          <button type="button" class="back-btn" data-action="cal-next">›</button>
+        </div>
+        <div class="cal-grid-head">
+          <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+        </div>
+        <div class="cal-grid">
+          ${cells
+            .map((d) => {
+              if (!d) return `<span class="cal-cell empty"></span>`;
+              const key = dateKey(d);
+              const has = getTasksForDate(d).length > 0;
+              const isToday = key === todayKey;
+              const isSel = key === selectedKey;
+              return `<button type="button" class="cal-cell ${has ? "has-tasks" : ""} ${isToday ? "is-today" : ""} ${isSel ? "selected" : ""}" data-action="cal-select-day" data-day="${key}">${d.getDate()}${has ? '<i class="cal-dot"></i>' : ""}</button>`;
+            })
+            .join("")}
+        </div>
+        <div class="cal-day-detail">
+          <h3>${escapeHtml(formatDateRu(parseDateKey(selectedKey)))}</h3>
+          <div class="plan-task-list">
+            ${selectedTasks.length ? selectedTasks.map((t) => renderPlanTaskItem(t)).join("") : '<p class="empty">Нет задач</p>'}
+          </div>
+        </div>
+      `;
+    } else if (mode === "year") {
+      const y = baseDate.getFullYear();
+      body = `
+        <div class="cal-nav">
+          <button type="button" class="back-btn" data-action="cal-prev">‹</button>
+          <span class="cal-title">${y}</span>
+          <button type="button" class="back-btn" data-action="cal-next">›</button>
+        </div>
+        <div class="cal-year-grid">
+          ${MONTH_NAMES.map((name, mi) => {
+            const cnt = countTasksInMonth(y, mi);
+            return `
+              <button type="button" class="cal-year-month ${cnt ? "has-tasks" : ""}" data-action="cal-select-month" data-month="${mi}">
+                <strong>${name}</strong>
+                <span>${cnt ? `${cnt} задач` : "—"}</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="calendar-embed">
+        <p class="section-title">Календарь — все дома</p>
+        <div class="cal-tabs">${tabs}</div>
+        ${body}
+      </div>
+    `;
+  }
+
+  function calendarView() {
+    return planScreenView();
   }
 
   function shopView() {
@@ -1051,10 +3189,13 @@
           <div class="shop-item">
             <h3>${escapeHtml(p.name)}</h3>
             <p class="shop-from">${escapeHtml(p.houseName)} · ${escapeHtml(p.roomName)} · ${escapeHtml(p.taskName)}</p>
-            <a class="product-link" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">
-              Купить ${p.price ? `· ${escapeHtml(p.price)}` : ""}
-              <span>→</span>
-            </a>
+            <div class="shop-actions">
+              <a class="product-link" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">
+                Купить ${p.price ? `· ${escapeHtml(p.price)}` : ""}
+                <span>→</span>
+              </a>
+              <button type="button" class="btn btn-sm btn-share" data-action="share-product" data-name="${escapeHtml(p.name)}">➤ Поделиться</button>
+            </div>
           </div>
         `
           )
@@ -1184,7 +3325,8 @@
       `;
     }
 
-    if (type === "suggest30") {
+    if (type === "suggestTime") {
+      const minutes = ui.modal.minutes || 30;
       const picks = ui.modal.tasks || [];
       const list = picks.length
         ? picks
@@ -1202,8 +3344,8 @@
         <div class="overlay" data-action="close-modal-bg">
           <div class="modal">
             <button type="button" class="modal-close" data-action="close-modal">×</button>
-            <h2>За 30 минут</h2>
-            <p class="modal-desc">Подборка незавершённых задач с высоким приоритетом, чтобы уложиться в полчаса.</p>
+            <h2>За ${minutes} мин</h2>
+            <p class="modal-desc">${escapeHtml(getMessage("taskSuggest", { minutes }))}</p>
             ${list}
           </div>
         </div>
@@ -1261,8 +3403,18 @@
             <button type="button" class="modal-close" data-action="close-modal">×</button>
             <h2>Новая комната</h2>
             <div class="field">
-              <label>Название</label>
+              <label for="room-name-input">Название</label>
               <input type="text" id="room-name-input" placeholder="Спальня, коридор…" maxlength="40" />
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="room-width-input">Ширина (м)</label>
+                <input type="number" id="room-width-input" min="0" step="0.1" placeholder="4" />
+              </div>
+              <div class="field">
+                <label for="room-length-input">Длина (м)</label>
+                <input type="number" id="room-length-input" min="0" step="0.1" placeholder="5" />
+              </div>
             </div>
             <button type="button" class="btn btn-primary" data-action="confirm-add-room">Добавить</button>
           </div>
@@ -1270,21 +3422,61 @@
       `;
     }
 
-    if (type === "addTask") {
+    if (type === "editHouse") {
+      const house = getActiveHouse();
       return `
         <div class="overlay center" data-action="close-modal-bg">
           <div class="modal">
             <button type="button" class="modal-close" data-action="close-modal">×</button>
-            <h2>Новая задача</h2>
+            <h2>Название дома</h2>
             <div class="field">
-              <label>Название</label>
-              <input type="text" id="task-name-input" placeholder="Погладить бельё…" maxlength="60" />
+              <label for="edit-house-name-input">Новое название</label>
+              <input type="text" id="edit-house-name-input" value="${escapeHtml(house?.name || "")}" maxlength="40" />
             </div>
+            <button type="button" class="btn btn-primary" data-action="confirm-edit-house">Сохранить</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (type === "editRoom") {
+      const room = findRoomById(ui.modal.roomId)?.room;
+      return `
+        <div class="overlay center" data-action="close-modal-bg">
+          <div class="modal">
+            <button type="button" class="modal-close" data-action="close-modal">×</button>
+            <h2>Комната</h2>
             <div class="field">
-              <label>Минуты</label>
-              <input type="number" id="task-min-input" value="15" min="1" max="180" />
+              <label for="edit-room-name-input">Название</label>
+              <input type="text" id="edit-room-name-input" value="${escapeHtml(room?.name || "")}" maxlength="40" />
             </div>
-            <button type="button" class="btn btn-primary" data-action="confirm-add-task">Добавить</button>
+            <div class="field-row">
+              <div class="field">
+                <label for="edit-room-width-input">Ширина (м)</label>
+                <input type="number" id="edit-room-width-input" min="0" step="0.1" value="${room?.width ?? ""}" placeholder="4" />
+              </div>
+              <div class="field">
+                <label for="edit-room-length-input">Длина (м)</label>
+                <input type="number" id="edit-room-length-input" min="0" step="0.1" value="${room?.length ?? ""}" placeholder="5" />
+              </div>
+            </div>
+            ${room?.area ? `<p class="field-hint">Площадь: ${room.area} м²</p>` : ""}
+            <button type="button" class="btn btn-primary" data-action="confirm-edit-room">Сохранить</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (type === "taskForm") {
+      const isEdit = ui.modal.mode === "edit";
+      const task = isEdit ? findTask(ui.modal.taskId)?.task : null;
+      return `
+        <div class="overlay center" data-action="close-modal-bg">
+          <div class="modal">
+            <button type="button" class="modal-close" data-action="close-modal">×</button>
+            <h2>${isEdit ? "Редактировать задачу" : "Новая задача"}</h2>
+            ${taskFormFieldsHtml(ui.modal.roomId, task)}
+            <button type="button" class="btn btn-primary" data-action="confirm-task-form">${isEdit ? "Сохранить" : "Добавить"}</button>
           </div>
         </div>
       `;
@@ -1313,6 +3505,31 @@
             <p class="modal-desc">Удалить задачу «${escapeHtml(ui.modal.name)}»?</p>
             <button type="button" class="btn btn-danger" style="width:100%" data-action="confirm-delete-task">Да, удалить</button>
             <button type="button" class="btn btn-ghost" style="width:100%;margin-top:8px" data-action="close-modal">Отмена</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (type === "gamificationReward") {
+      const { variant, points } = ui.modal;
+      const icons = { goldenStar: "⭐", messyHouse: "💀", inactive30: "🧹" };
+      const titles = {
+        goldenStar: "Золотая звезда!",
+        messyHouse: getMessage("messyHouse"),
+        inactive30: getMessage("inactive30"),
+      };
+      const bodies = {
+        goldenStar: getMessage("goldenStar") + ` +${points} бонусных очков`,
+        messyHouse: `Штраф ${points} очков. Пора навести порядок!`,
+        inactive30: `+${points} бонусных очков за возвращение!`,
+      };
+      return `
+        <div class="overlay center">
+          <div class="modal reward-modal">
+            <div class="reward-icon">${icons[variant] || "🎉"}</div>
+            <h2>${escapeHtml(titles[variant] || "Награда")}</h2>
+            <p class="modal-desc">${escapeHtml(bodies[variant] || "")}</p>
+            <button type="button" class="btn btn-primary" data-action="close-gamification-modal">Отлично!</button>
           </div>
         </div>
       `;
@@ -1358,8 +3575,8 @@
       main = shopView();
     } else if (ui.tab === "profile") {
       main = profileView();
-    } else if (ui.view === "house") {
-      main = houseView();
+    } else if (ui.tab === "schedule") {
+      main = planScreenView();
     } else {
       main = housesView();
     }
@@ -1382,8 +3599,18 @@
     if (ui.modal?.type === "addHouse") {
       document.getElementById("house-name-input")?.focus();
     }
-    if (ui.modal?.type === "socialName") {
-      document.getElementById("social-name-input")?.focus();
+    if (ui.modal?.type === "editHouse") {
+      document.getElementById("edit-house-name-input")?.focus();
+    }
+    if (ui.modal?.type === "editRoom") {
+      document.getElementById("edit-room-name-input")?.focus();
+    }
+    if (ui.modal?.type === "addRoom") {
+      document.getElementById("room-name-input")?.focus();
+    }
+    if (ui.modal?.type === "taskForm") {
+      bindTaskFormHandlers();
+      document.getElementById("task-action-select")?.focus();
     }
   }
 
@@ -1397,13 +3624,15 @@
     }, 200);
   }
 
-  function pick30MinTasks() {
+  function pickTasksForMinutes(minutes) {
     const house = getActiveHouse();
     if (!house) return [];
+    const budgetTotal = Math.max(1, Number(minutes) || 30);
     const prioWeight = { red: 0, yellow: 1, green: 2 };
     const open = [];
     for (const room of house.rooms) {
       for (const task of room.tasks) {
+        if (!isTaskDueToday(task)) continue;
         if (task.completedToday) continue;
         open.push({
           name: task.name,
@@ -1415,7 +3644,7 @@
     }
     open.sort((a, b) => prioWeight[a.prio] - prioWeight[b.prio]);
     const picked = [];
-    let budget = 30;
+    let budget = budgetTotal;
     for (const t of open) {
       if (t.estimatedMinutes <= budget) {
         picked.push(t);
@@ -1427,6 +3656,12 @@
     return picked;
   }
 
+  function openSuggestModal(minutes) {
+    const m = Math.max(1, Number(minutes) || 30);
+    ui.modal = { type: "suggestTime", minutes: m, tasks: pickTasksForMinutes(m) };
+    render();
+  }
+
   function buildReport() {
     const house = getActiveHouse();
     const items = [];
@@ -1434,6 +3669,7 @@
     let skipped = 0;
     for (const room of house.rooms) {
       for (const task of room.tasks) {
+        if (!isTaskDueToday(task)) continue;
         items.push({
           name: task.name,
           room: room.name,
@@ -1468,6 +3704,32 @@
         loginWithEmail(email, password);
       };
     }
+    const customMinInput = root.querySelector("#custom-minutes-input");
+    if (customMinInput) {
+      customMinInput.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          openSuggestModal(customMinInput.value);
+        }
+      };
+    }
+    const notifToggle = root.querySelector('[data-action="toggle-notifications"]');
+    if (notifToggle) {
+      notifToggle.onchange = (e) => {
+        toggleNotificationsEnabled(e.target.checked);
+      };
+    }
+    const toneSelect = root.querySelector("#tone-select");
+    if (toneSelect) {
+      toneSelect.onchange = (e) => setTone(e.target.value);
+    }
+    const dateInput = root.querySelector(".cal-date-input");
+    if (dateInput) {
+      dateInput.onchange = (e) => {
+        ui.calendar.date = parseDateKey(e.target.value).toISOString();
+        render();
+      };
+    }
   }
 
   function onClick(e) {
@@ -1479,8 +3741,44 @@
     if (action === "email-auth-form") return;
 
     switch (action) {
+      case "tab-homes":
+        ui.tab = "homes";
+        ui.view = "houses";
+        render();
+        break;
+      case "tab-schedule":
+        ui.tab = "schedule";
+        if (ui.planView !== "room") ui.planView = ui.planView || "rooms";
+        render();
+        break;
+      case "plan-sub-rooms":
+        ui.planView = "rooms";
+        ui.activeRoomId = null;
+        render();
+        break;
+      case "plan-sub-today":
+        ui.planView = "today";
+        ui.activeRoomId = null;
+        render();
+        break;
+      case "plan-sub-calendar":
+        ui.planView = "calendar";
+        ui.activeRoomId = null;
+        render();
+        break;
+      case "open-room":
+        ui.planView = "room";
+        ui.activeRoomId = btn.dataset.id;
+        render();
+        break;
+      case "back-rooms":
+        ui.planView = "rooms";
+        ui.activeRoomId = null;
+        render();
+        break;
       case "tab-plan":
-        ui.tab = "plan";
+        ui.tab = "schedule";
+        ui.planView = "rooms";
         render();
         break;
       case "tab-shop":
@@ -1514,14 +3812,20 @@
         break;
       }
       case "open-house":
-        ui.view = "house";
+        ui.tab = "schedule";
+        ui.planView = "rooms";
+        ui.activeRoomId = null;
+        ui.view = "houses";
         ui.activeHouseId = btn.dataset.id;
         state.activeHouseId = btn.dataset.id;
         saveState();
         render();
         break;
       case "back-houses":
+        ui.tab = "homes";
         ui.view = "houses";
+        ui.planView = "rooms";
+        ui.activeRoomId = null;
         render();
         break;
       case "prompt-add-house":
@@ -1546,27 +3850,88 @@
         break;
       case "confirm-add-room": {
         const name = document.getElementById("room-name-input")?.value || "";
+        const width = document.getElementById("room-width-input")?.value;
+        const length = document.getElementById("room-length-input")?.value;
         ui.modal = null;
-        addRoom(getActiveHouse().id, name);
+        addRoom(getActiveHouse().id, name, width, length);
         break;
       }
       case "prompt-add-task":
-        ui.modal = { type: "addTask", roomId: btn.dataset.room };
+        ui.modal = { type: "taskForm", mode: "add", roomId: btn.dataset.room };
         render();
         break;
-      case "confirm-add-task": {
-        const name = document.getElementById("task-name-input")?.value || "";
-        const min = Number(document.getElementById("task-min-input")?.value) || 15;
-        const roomId = ui.modal.roomId;
-        ui.modal = null;
-        addTask(roomId, name, min);
+      case "prompt-edit-task":
+        ui.modal = {
+          type: "taskForm",
+          mode: "edit",
+          roomId: btn.dataset.room,
+          taskId: btn.dataset.id,
+        };
+        render();
+        break;
+      case "confirm-task-form": {
+        const data = readTaskFormData();
+        const { roomId, mode, taskId } = ui.modal;
+        if (!data.name) {
+          toast("Введите название задачи");
+          break;
+        }
+        saveTaskFromModal(roomId, data, mode === "edit" ? taskId : null);
+        break;
+      }
+      case "prompt-edit-house":
+        ui.modal = { type: "editHouse" };
+        render();
+        break;
+      case "prompt-edit-room":
+        ui.modal = { type: "editRoom", roomId: btn.dataset.id };
+        render();
+        break;
+      case "confirm-edit-room": {
+        const name = document.getElementById("edit-room-name-input")?.value || "";
+        const width = document.getElementById("edit-room-width-input")?.value;
+        const length = document.getElementById("edit-room-length-input")?.value;
+        saveRoomDetails(ui.modal.roomId, { name, width, length });
+        break;
+      }
+      case "confirm-edit-house": {
+        const name = document.getElementById("edit-house-name-input")?.value || "";
+        renameHouse(getActiveHouse()?.id, name);
+        break;
+      }
+      case "suggest-time":
+        openSuggestModal(btn.dataset.minutes);
+        break;
+      case "suggest-custom-time": {
+        const val = document.getElementById("custom-minutes-input")?.value;
+        if (!val || Number(val) < 1) {
+          toast("Введите количество минут");
+          break;
+        }
+        openSuggestModal(val);
         break;
       }
       case "toggle-done":
         toggleTaskDone(btn.dataset.id);
         break;
+      case "complete-task":
+        completeTask(btn.dataset.id);
+        break;
       case "skip":
         skipTask(btn.dataset.id);
+        break;
+      case "set-avatar-preset":
+        setAvatarPreset(btn.dataset.preset);
+        break;
+      case "share-product":
+        shareProduct(btn.dataset.name || "товар");
+        break;
+      case "close-gamification-modal":
+        ui.modal = null;
+        render();
+        break;
+      case "remind-task":
+        remindTask(btn.dataset.id);
         break;
       case "prompt-delete-room":
         ui.modal = {
@@ -1649,17 +4014,13 @@
         ui.modal = null;
         saveState();
         render();
-        toast("Время сохранено");
+        toast(getMessage("timerSaved"));
         break;
       }
       case "close-timer":
         ui.stopwatch.running = false;
         if (ui.stopwatch.tick) clearInterval(ui.stopwatch.tick);
         ui.modal = null;
-        render();
-        break;
-      case "suggest-30":
-        ui.modal = { type: "suggest30", tasks: pick30MinTasks() };
         render();
         break;
       case "daily-report":
@@ -1715,6 +4076,71 @@
       case "start-over":
         startOver();
         break;
+      case "cal-mode":
+        ui.calendar.mode = btn.dataset.mode;
+        render();
+        break;
+      case "cal-prev": {
+        const cal = ui.calendar;
+        const d = new Date(cal.date);
+        const step = { day: 1, week: 7, month: 0, year: 0 }[cal.mode] ?? 1;
+        if (cal.mode === "month") d.setMonth(d.getMonth() - 1);
+        else if (cal.mode === "year") d.setFullYear(d.getFullYear() - 1);
+        else d.setDate(d.getDate() - step);
+        cal.date = d.toISOString();
+        render();
+        break;
+      }
+      case "cal-next": {
+        const cal = ui.calendar;
+        const d = new Date(cal.date);
+        const step = { day: 1, week: 7, month: 0, year: 0 }[cal.mode] ?? 1;
+        if (cal.mode === "month") d.setMonth(d.getMonth() + 1);
+        else if (cal.mode === "year") d.setFullYear(d.getFullYear() + 1);
+        else d.setDate(d.getDate() + step);
+        cal.date = d.toISOString();
+        render();
+        break;
+      }
+      case "cal-select-day":
+        ui.calendar.selectedDay = btn.dataset.day;
+        ui.calendar.date = parseDateKey(btn.dataset.day).toISOString();
+        render();
+        break;
+      case "cal-select-month": {
+        const cal = ui.calendar;
+        const d = new Date(cal.date);
+        d.setMonth(Number(btn.dataset.month));
+        d.setDate(1);
+        cal.date = d.toISOString();
+        cal.mode = "month";
+        render();
+        break;
+      }
+      case "plan-complete-task":
+        completeTask(btn.dataset.id);
+        break;
+      case "plan-edit-task": {
+        const house = state.houses.find((h) =>
+          h.rooms.some((r) => r.id === btn.dataset.room)
+        );
+        if (house) {
+          ui.tab = "schedule";
+          ui.planView = "room";
+          ui.activeRoomId = btn.dataset.room;
+          ui.activeHouseId = house.id;
+          state.activeHouseId = house.id;
+        }
+        ui.modal = {
+          type: "taskForm",
+          mode: "edit",
+          roomId: btn.dataset.room,
+          taskId: btn.dataset.id,
+        };
+        saveState();
+        render();
+        break;
+      }
       default:
         break;
     }
@@ -1741,5 +4167,9 @@
     state: () => state,
   };
 
-  boot();
+  try {
+    boot();
+  } catch (e) {
+    showBootError(e);
+  }
 })();
