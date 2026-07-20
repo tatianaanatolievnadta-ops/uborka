@@ -26,7 +26,13 @@
   let supabase = null;
   if (isSupabaseReady()) {
     try {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
     } catch (e) {
       console.warn("Supabase init failed:", e);
       supabase = null;
@@ -51,12 +57,6 @@
     { min: 601, max: 1000, name: "Гуру чистоты" },
     { min: 1001, max: Infinity, name: "Легенда чистоты" },
   ];
-
-  const AVATAR_PRESETS = {
-    sloth: { emoji: "🦥", label: "Ленивец" },
-    cleaner: { emoji: "🧹", label: "Чистюля" },
-    angel: { emoji: "😇", label: "Бог чистоты" },
-  };
 
   const TONE_OPTIONS = [
     { id: "supportive", label: "😊 Поддерживающий" },
@@ -362,6 +362,7 @@
     stopwatch: { running: false, startedAt: 0, elapsed: 0, taskRef: null, tick: null },
     critTick: null,
     authError: "",
+    authLoading: false,
     confetti: false,
     justCompletedId: null,
   };
@@ -378,14 +379,58 @@
     return currentUser?.id || null;
   }
 
-  function loadState() {
+  function getStateKey(userId) {
+    const id = userId || currentUser?.id || loadSession()?.userId;
+    return id ? `${STORAGE_KEY}_${id}` : STORAGE_KEY;
+  }
+
+  function migrateLegacyState(userId) {
+    if (!userId) return;
+    const userKey = getStateKey(userId);
+    if (localStorage.getItem(userKey)) return;
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    if (legacy) localStorage.setItem(userKey, legacy);
+  }
+
+  function normalizeAppState(raw) {
+    const fresh = createFreshState();
+    if (!raw || typeof raw !== "object") return fresh;
+    const stateObj = { ...fresh, ...raw };
+    if (!Array.isArray(stateObj.houses) || !stateObj.houses.length) {
+      stateObj.houses = fresh.houses;
+    }
+    if (!stateObj.subscription) stateObj.subscription = fresh.subscription;
+    if (!stateObj.lastVisitDate) stateObj.lastVisitDate = fresh.lastVisitDate;
+    if (!stateObj.gamification) stateObj.gamification = createDefaultGamification();
+    return stateObj;
+  }
+
+  function loadState(userId) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const key = getStateKey(userId);
+      let raw = localStorage.getItem(key);
+      if (!raw && userId) {
+        migrateLegacyState(userId);
+        raw = localStorage.getItem(key);
+      }
       if (!raw) return null;
-      return JSON.parse(raw);
+      return normalizeAppState(JSON.parse(raw));
     } catch {
       return null;
     }
+  }
+
+  function loadStateForUser(userId, preferFresh) {
+    if (preferFresh) {
+      markFirstLaunch();
+      return createFreshState();
+    }
+    const existing = loadState(userId);
+    if (!existing) {
+      markFirstLaunch();
+      return createFreshState();
+    }
+    return existing;
   }
 
   function loadUsers() {
@@ -690,7 +735,8 @@
   function saveState() {
     if (!state) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const key = getStateKey();
+      localStorage.setItem(key, JSON.stringify(state));
     } catch (e) {
       console.error("saveState local", e);
     }
@@ -753,10 +799,20 @@
     const kept = localStorage.getItem(FIRST_LAUNCH_KEY);
     const users = localStorage.getItem(USERS_KEY);
     const session = localStorage.getItem(SESSION_KEY);
+    const userStateKey = getUserId() ? getStateKey() : null;
+    const preservedUserStates = {};
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(`${STORAGE_KEY}_`) && key !== userStateKey) {
+        preservedUserStates[key] = localStorage.getItem(key);
+      }
+    }
     localStorage.clear();
     if (kept) localStorage.setItem(FIRST_LAUNCH_KEY, kept);
     if (users) localStorage.setItem(USERS_KEY, users);
     if (session) localStorage.setItem(SESSION_KEY, session);
+    for (const [key, val] of Object.entries(preservedUserStates)) {
+      if (val != null) localStorage.setItem(key, val);
+    }
   }
 
   function getActiveHouse() {
@@ -1047,6 +1103,12 @@
     if (state.gamification.totalFloorAreaCleaned == null) {
       state.gamification.totalFloorAreaCleaned = 0;
     }
+    if (!state.subscription) {
+      state.subscription = createFreshState().subscription;
+    }
+    if (!state.lastVisitDate) {
+      state.lastVisitDate = new Date().toISOString();
+    }
   }
 
   // ——— Gamification & messages ———
@@ -1207,9 +1269,6 @@
     const av = g?.avatar || { type: "letter", value: "" };
     if (av.type === "upload" && av.value) {
       return `<img class="avatar-img" src="${av.value}" alt="Аватар" />`;
-    }
-    if (av.type === "preset" && AVATAR_PRESETS[av.value]) {
-      return `<span class="avatar-emoji">${AVATAR_PRESETS[av.value].emoji}</span>`;
     }
     const letter = (user?.name || "?").trim().charAt(0).toUpperCase() || "?";
     return `<span class="avatar-letter">${escapeHtml(letter)}</span>`;
@@ -1373,20 +1432,79 @@
     return null;
   }
 
-  function setAvatarPreset(presetId) {
-    const g = ensureGamification();
-    g.avatar = { type: "preset", value: presetId };
-    saveState();
-    render();
-    toast("Аватар обновлён");
-  }
-
   function setAvatarUpload(base64) {
     const g = ensureGamification();
     g.avatar = { type: "upload", value: base64 };
+    if (currentUser) {
+      currentUser.avatar = g.avatar;
+      upsertUser(currentUser);
+    }
     saveState();
     render();
     toast("Фото загружено");
+  }
+
+  function clearAvatar() {
+    const g = ensureGamification();
+    g.avatar = { type: "letter", value: "" };
+    if (currentUser) {
+      currentUser.avatar = g.avatar;
+      upsertUser(currentUser);
+    }
+    saveState();
+    render();
+    toast("Аватар сброшен");
+  }
+
+  function readAvatarFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !file.type.startsWith("image/")) {
+        reject(new Error("Выберите файл изображения"));
+        return;
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        reject(new Error("Файл слишком большой (макс. 8 МБ)"));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("Некорректное изображение"));
+        img.onload = () => {
+          const maxSide = 320;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxSide || h > maxSide) {
+            if (w >= h) {
+              h = Math.round((h * maxSide) / w);
+              w = maxSide;
+            } else {
+              w = Math.round((w * maxSide) / h);
+              h = maxSide;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAvatarUpload(file) {
+    try {
+      const dataUrl = await readAvatarFile(file);
+      setAvatarUpload(dataUrl);
+    } catch (e) {
+      console.error("avatar upload:", e);
+      toast(e.message || "Не удалось загрузить фото");
+    }
   }
 
   function setTone(toneId) {
@@ -1646,66 +1764,98 @@
   }
 
   // ——— Auth ———
-  async function enterAppAs(user) {
+  function authRedirectUrl() {
+    return window.location.origin + window.location.pathname + window.location.search;
+  }
+
+  function mapSupabaseAuthError(error) {
+    const msg = String(error?.message || error || "");
+    if (msg.includes("Invalid login credentials")) return "Неверный email или пароль";
+    if (msg.includes("User already registered")) return "Этот email уже зарегистрирован — войдите с паролем";
+    if (msg.includes("Email not confirmed")) return "Подтвердите email по ссылке из письма";
+    if (msg.includes("Password should be at least")) return "Пароль не менее 6 символов";
+    return msg || "Ошибка входа";
+  }
+
+  async function enterAppAs(user, { isNewUser = false } = {}) {
+    if (!user?.id) {
+      ui.authError = "Не удалось определить пользователя";
+      ui.authLoading = false;
+      render();
+      return;
+    }
+
     if (!user.referralCode) {
       user.referralCode = user.id;
       user.referralsCount = user.referralsCount || 0;
       user.referralBonusDays = user.referralBonusDays || 0;
       upsertUser(user);
     }
+
     currentUser = user;
     saveSession({ userId: user.id, email: user.email });
     ui.screen = "app";
     ui.authError = "";
+    ui.authLoading = false;
     ui.modal = null;
     ui.tab = "homes";
     ui.view = "houses";
 
-    let isNewUser = false;
+    try {
+      migrateLegacyState(user.id);
 
-    if (isSupabaseReady() && supabase) {
-      try {
-        let existing = await loadUserData();
-        if (!existing?.houses?.length) {
-          existing = createFreshState();
-          markFirstLaunch();
-          isNewUser = true;
-        }
-        state = existing;
-      } catch (e) {
-        console.warn("loadUserData failed, fallback local:", e);
-        const local = loadState();
-        if (!local) {
-          state = createFreshState();
-          markFirstLaunch();
-          isNewUser = true;
+      if (isSupabaseReady() && supabase) {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
+
+        if (authUser) {
+          let existing = await loadUserData();
+          if (existing?.houses?.length) {
+            state = normalizeAppState(existing);
+          } else {
+            state = loadStateForUser(user.id, isNewUser);
+            if (!state?.houses?.length) state = createFreshState();
+            isNewUser = true;
+          }
         } else {
-          state = local;
+          state = loadStateForUser(user.id, isNewUser);
+        }
+      } else {
+        state = loadStateForUser(user.id, isNewUser);
+      }
+
+      if (!state.profile) state.profile = {};
+      state.profile.name = user.name;
+      state.profile.email = user.email;
+      state.profile.provider = user.provider;
+      state.lastVisitDate = new Date().toISOString();
+      state.activeHouseId = state.activeHouseId || state.houses[0]?.id;
+      ui.activeHouseId = state.activeHouseId;
+      migrateState();
+      applyReferralBonusToSubscription();
+      saveState();
+
+      if (isNewUser && isSupabaseReady() && supabase) {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
+        if (authUser) {
+          await seedDefaultDataToDb(state);
         }
       }
-    } else {
-      let existing = loadState();
-      if (!existing) {
-        existing = createFreshState();
-        markFirstLaunch();
-        isNewUser = true;
-      }
-      state = existing;
-    }
 
-    if (!state.profile) state.profile = {};
-    state.profile.name = user.name;
-    state.profile.email = user.email;
-    state.profile.provider = user.provider;
-    state.activeHouseId = state.activeHouseId || state.houses[0]?.id;
-    ui.activeHouseId = state.activeHouseId;
-    migrateState();
-    applyReferralBonusToSubscription();
-    saveState();
-    if (isNewUser && isSupabaseReady() && supabase) {
-      seedDefaultDataToDb(state).catch(console.error);
+      continueBootAfterAuth();
+    } catch (e) {
+      console.error("enterAppAs failed:", e);
+      currentUser = null;
+      saveSession(null);
+      state = null;
+      ui.screen = "auth";
+      ui.authError = "Не удалось войти. Попробуйте ещё раз.";
+      ui.authLoading = false;
+      render();
     }
-    continueBootAfterAuth();
   }
 
   async function logout() {
@@ -1722,15 +1872,104 @@
     ui.screen = "auth";
     ui.modal = null;
     ui.authError = "";
+    ui.authLoading = false;
     ui.tab = "homes";
     ui.view = "houses";
     clearIntervals();
     render();
   }
 
-  function loginWithEmail(email, password) {
+  async function loginWithEmailSupabase(email, password) {
+    let isNewUser = false;
+    let result = await supabase.auth.signInWithPassword({ email, password });
+
+    if (result.error) {
+      if (
+        result.error.message.includes("Invalid login credentials") ||
+        result.error.message.includes("Invalid login")
+      ) {
+        isNewUser = true;
+        result = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name: email.split("@")[0] || "Пользователь", provider: "email" },
+          },
+        });
+        if (result.error) throw new Error(mapSupabaseAuthError(result.error));
+
+        if (!result.data.session) {
+          ui.authLoading = false;
+          ui.authError =
+            "Аккаунт создан. Если включено подтверждение email — проверьте почту, затем войдите снова.";
+          render();
+          return;
+        }
+      } else {
+        throw new Error(mapSupabaseAuthError(result.error));
+      }
+    }
+
+    const authUser = result.data.user || result.data.session?.user;
+    if (!authUser) throw new Error("Не удалось получить данные пользователя");
+
+    const user = await mergeProfileIntoUser(mapAuthUser(authUser));
+    upsertUser({
+      id: user.id,
+      email: user.email,
+      password: null,
+      name: user.name,
+      provider: "email",
+      createdAt: new Date().toISOString(),
+      referralCode: user.referralCode,
+      referralsCount: user.referralsCount,
+      referralBonusDays: user.referralBonusDays,
+      referredBy: user.referredBy,
+    });
+    await processReferralForNewUser(user);
+    await enterAppAs(user, { isNewUser });
+    toast(isNewUser ? getMessage("accountCreated") : getMessage("welcomeBack", { name: user.name }));
+  }
+
+  async function loginWithEmailLocal(email, password) {
+    let user = getUserByEmail(email);
+    if (user) {
+      if (user.provider !== "email") {
+        throw new Error(
+          `Этот email привязан к входу через ${PROVIDER_LABELS[user.provider] || user.provider}`
+        );
+      }
+      if (user.password !== password) {
+        throw new Error("Неверный пароль");
+      }
+      await enterAppAs(user);
+      toast(getMessage("welcomeBack", { name: user.name }));
+      return;
+    }
+
+    user = upsertUser({
+      id: uid(),
+      email,
+      password,
+      name: email.split("@")[0] || "Пользователь",
+      provider: "email",
+      createdAt: new Date().toISOString(),
+      referralCode: null,
+      referralsCount: 0,
+      referralBonusDays: 0,
+      referredBy: null,
+    });
+    user.referralCode = user.id;
+    await processReferralForNewUser(user);
+    upsertUser(user);
+    await enterAppAs(user, { isNewUser: true });
+    toast(getMessage("accountCreated"));
+  }
+
+  async function loginWithEmail(email, password) {
     const cleaned = String(email || "").trim().toLowerCase();
     const pass = String(password || "");
+
     if (!cleaned || !cleaned.includes("@")) {
       ui.authError = "Введите корректный email";
       render();
@@ -1742,65 +1981,120 @@
       return;
     }
 
-    let user = getUserByEmail(cleaned);
-    if (user) {
-      if (user.provider !== "email") {
-        ui.authError = `Этот email привязан к входу через ${PROVIDER_LABELS[user.provider] || user.provider}`;
-        render();
-        return;
+    ui.authError = "";
+    ui.authLoading = true;
+    render();
+
+    try {
+      if (isSupabaseReady() && supabase) {
+        if (pass.length < 6) {
+          throw new Error("При облачном входе пароль не менее 6 символов");
+        }
+        await loginWithEmailSupabase(cleaned, pass);
+      } else {
+        await loginWithEmailLocal(cleaned, pass);
       }
-      if (user.password !== pass) {
-        ui.authError = "Неверный пароль";
+    } catch (e) {
+      console.error("loginWithEmail:", e);
+      ui.authLoading = false;
+      ui.authError = e.message || "Ошибка входа";
+      render();
+    }
+  }
+
+  async function startSocialLogin(provider) {
+    if (isSupabaseReady() && supabase && provider === "google") {
+      ui.authLoading = true;
+      ui.authError = "";
+      render();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: authRedirectUrl() },
+      });
+      if (error) {
+        ui.authLoading = false;
+        ui.authError = mapSupabaseAuthError(error);
         render();
-        return;
       }
-      enterAppAs(user);
-      toast(getMessage("welcomeBack", { name: user.name }));
       return;
     }
 
-    user = upsertUser({
-      id: uid(),
-      email: cleaned,
-      password: pass,
-      name: cleaned.split("@")[0] || "Пользователь",
-      provider: "email",
-      createdAt: new Date().toISOString(),
-      referralCode: null,
-      referralsCount: 0,
-      referralBonusDays: 0,
-      referredBy: null,
-    });
-    user.referralCode = user.id;
-    processReferralForNewUser(user);
-    upsertUser(user);
-    enterAppAs(user);
-    toast(getMessage("accountCreated"));
+    ui.modal = { type: "socialName", provider };
+    render();
   }
 
-  function completeSocialLogin(provider, name) {
-    const displayName =
-      (name && name.trim()) ||
-      ({ google: "Google User", vk: "VK User", telegram: "Telegram User" }[provider] ||
-        "Пользователь");
-    const email = `user_${provider}_${Math.random().toString(36).slice(2, 8)}@temp.com`;
-    const user = upsertUser({
-      id: uid(),
-      email,
-      password: null,
-      name: displayName,
-      provider,
-      createdAt: new Date().toISOString(),
-      referralCode: null,
-      referralsCount: 0,
-      referralBonusDays: 0,
-      referredBy: null,
-    });
-    user.referralCode = user.id;
-    processReferralForNewUser(user);
-    upsertUser(user);
-    enterAppAs(user);
-    toast(getMessage("accountCreated"));
+  async function completeSocialLogin(provider, name) {
+    if (!provider) return;
+
+    ui.authLoading = true;
+    ui.authError = "";
+    render();
+
+    try {
+      const displayName =
+        (name && name.trim()) ||
+        ({ google: "Google User", vk: "VK User", telegram: "Telegram User" }[provider] ||
+          "Пользователь");
+
+      if (isSupabaseReady() && supabase) {
+        const email = `user_${provider}_${Math.random().toString(36).slice(2, 10)}@demo.local`;
+        const password = `Demo_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name: displayName, provider },
+          },
+        });
+        if (error) throw new Error(mapSupabaseAuthError(error));
+        if (!data.session?.user) {
+          throw new Error("Не удалось создать сессию. Попробуйте вход по email.");
+        }
+        const user = await mergeProfileIntoUser(mapAuthUser(data.session.user));
+        user.provider = provider;
+        user.name = displayName;
+        upsertUser({
+          id: user.id,
+          email: user.email,
+          password: null,
+          name: displayName,
+          provider,
+          createdAt: new Date().toISOString(),
+          referralCode: user.referralCode,
+          referralsCount: 0,
+          referralBonusDays: 0,
+          referredBy: null,
+        });
+        await processReferralForNewUser(user);
+        await enterAppAs(user, { isNewUser: true });
+        toast(getMessage("accountCreated"));
+        return;
+      }
+
+      const email = `user_${provider}_${Math.random().toString(36).slice(2, 8)}@temp.com`;
+      const user = upsertUser({
+        id: uid(),
+        email,
+        password: null,
+        name: displayName,
+        provider,
+        createdAt: new Date().toISOString(),
+        referralCode: null,
+        referralsCount: 0,
+        referralBonusDays: 0,
+        referredBy: null,
+      });
+      user.referralCode = user.id;
+      await processReferralForNewUser(user);
+      upsertUser(user);
+      await enterAppAs(user, { isNewUser: true });
+      toast(getMessage("accountCreated"));
+    } catch (e) {
+      console.error("completeSocialLogin:", e);
+      ui.authLoading = false;
+      ui.authError = e.message || "Не удалось войти через соцсеть";
+      render();
+    }
   }
 
   // ——— Boot / retention ———
@@ -1820,8 +2114,9 @@
     }
     currentUser = user;
     ui.screen = "app";
+    migrateLegacyState(user.id);
 
-    const existing = loadState();
+    const existing = loadState(user.id);
     if (!existing) {
       state = createFreshState();
       state.profile = {
@@ -1854,17 +2149,37 @@
     try {
       const {
         data: { session },
+        error,
       } = await supabase.auth.getSession();
+      if (error) console.warn("Supabase getSession:", error);
+
       if (session?.user) {
-        currentUser = await mergeProfileIntoUser(mapAuthUser(session.user));
+        const user = await mergeProfileIntoUser(mapAuthUser(session.user));
+        upsertUser({
+          id: user.id,
+          email: user.email,
+          password: null,
+          name: user.name,
+          provider: user.provider,
+          createdAt: new Date().toISOString(),
+          referralCode: user.referralCode,
+          referralsCount: user.referralsCount,
+          referralBonusDays: user.referralBonusDays,
+          referredBy: user.referredBy,
+        });
+        currentUser = user;
+        saveSession({ userId: user.id, email: user.email });
         ui.screen = "app";
+        migrateLegacyState(user.id);
+
         state = await loadUserData();
         if (!state?.houses?.length) {
-          state = createFreshState();
+          state = loadState(user.id) || createFreshState();
+          if (!state.houses?.length) state = createFreshState();
           state.profile = {
-            name: currentUser.name,
-            email: currentUser.email,
-            provider: currentUser.provider,
+            name: user.name,
+            email: user.email,
+            provider: user.provider,
           };
           state.activeHouseId = state.houses[0].id;
           ui.activeHouseId = state.houses[0].id;
@@ -1872,9 +2187,9 @@
           await seedDefaultDataToDb(state);
         } else if (!state.profile) {
           state.profile = {
-            name: currentUser.name,
-            email: currentUser.email,
-            provider: currentUser.provider,
+            name: user.name,
+            email: user.email,
+            provider: user.provider,
           };
         }
         ui.activeHouseId = state.activeHouseId || state.houses[0]?.id;
@@ -1889,6 +2204,14 @@
 
   function boot() {
     if (isSupabaseReady() && supabase) {
+      supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "SIGNED_IN" && session?.user && ui.screen === "auth" && !ui.authLoading) {
+          mergeProfileIntoUser(mapAuthUser(session.user))
+            .then((user) => enterAppAs(user))
+            .catch((e) => console.warn("onAuthStateChange:", e));
+        }
+      });
+
       bootWithSupabase().catch((e) => {
         console.warn(e);
         bootLocal();
@@ -1993,6 +2316,7 @@
       sessionDaysUntilDeletion: null,
       sessionDeletionDeadline: null,
       authError: "",
+      authLoading: false,
     };
     if (!currentUser) {
       state = null;
@@ -2587,6 +2911,9 @@
     const err = ui.authError
       ? `<p class="auth-error">${escapeHtml(ui.authError)}</p>`
       : "";
+    const loading = ui.authLoading;
+    const disabled = loading ? "disabled" : "";
+    const submitLabel = loading ? "Входим…" : "Войти / Зарегистрироваться";
     return `
       <div class="auth-screen">
         <div class="auth-card">
@@ -2595,7 +2922,7 @@
           <p class="auth-lead">Войдите и держите уборку по всем домам под контролем.</p>
 
           <div class="social-row" role="group" aria-label="Вход через соцсети">
-            <button type="button" class="social-btn social-google" data-action="social-start" data-provider="google" title="Google" aria-label="Войти через Google">
+            <button type="button" class="social-btn social-google" data-action="social-start" data-provider="google" title="Google" aria-label="Войти через Google" ${disabled}>
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
                 <path fill="#EA4335" d="M12 10.2v3.6h5.1c-.2 1.2-.9 2.2-1.9 2.9l3.1 2.4c1.8-1.7 2.9-4.1 2.9-7 0-.7-.1-1.3-.2-1.9H12z"/>
                 <path fill="#34A853" d="M6.6 14.3l-.8.6-2.5 1.9C5 19.5 8.2 21.5 12 21.5c2.7 0 5-.9 6.7-2.4l-3.1-2.4c-.9.6-2 .9-3.6.9-2.8 0-5.1-1.9-5.9-4.4z"/>
@@ -2603,12 +2930,12 @@
                 <path fill="#FBBC05" d="M12 5.5c1.5 0 2.8.5 3.9 1.5l2.9-2.9C16.9 2.4 14.7 1.5 12 1.5 8.2 1.5 5 3.5 3.3 7.2L6.5 9.6C7.4 7.2 9.6 5.5 12 5.5z"/>
               </svg>
             </button>
-            <button type="button" class="social-btn social-vk" data-action="social-start" data-provider="vk" title="VK" aria-label="Войти через VK">
+            <button type="button" class="social-btn social-vk" data-action="social-start" data-provider="vk" title="VK" aria-label="Войти через VK" ${disabled}>
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
                 <path fill="#fff" d="M12.8 17.5h-1.5c-3.4 0-5.4-2.3-5.5-6.2h1.7c.1 2.8 1.3 4 2.3 4.1V9.3h1.7v2.9c1-.01 2-.6 2.4-1.6.2-.5.3-1 .3-1.3h1.7c-.1.8-.4 1.7-.9 2.4-.4.6-.9 1.1-1.5 1.4 1.1.3 1.9 1.1 2.4 1.9.7 1.1 1.2 2.3 1.6 2.5h-1.9c-.3-.6-1-1.6-2.1-2.7-.2-.2-.5-.2-.8 0-1 .9-1.6 1.8-1.8 2.4l-.1.3z"/>
               </svg>
             </button>
-            <button type="button" class="social-btn social-tg" data-action="social-start" data-provider="telegram" title="Telegram" aria-label="Войти через Telegram">
+            <button type="button" class="social-btn social-tg" data-action="social-start" data-provider="telegram" title="Telegram" aria-label="Войти через Telegram" ${disabled}>
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
                 <path fill="#fff" d="M9.7 14.6l-.4 3.9c.5 0 .8-.2 1.1-.5l2.6-2.5 5.4 4c1 .5 1.7.3 2-.9l3.6-16.9c.3-1.5-.5-2.1-1.5-1.7L2.4 9.3c-1.4.6-1.4 1.3-.3 1.7l4.4 1.4 10.2-6.4c.5-.3.9-.1.5.2L9.7 14.6z"/>
               </svg>
@@ -2627,7 +2954,7 @@
               <input id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••" required />
             </div>
             ${err}
-            <button type="submit" class="btn btn-primary" data-action="email-auth">Войти / Зарегистрироваться</button>
+            <button type="submit" class="btn btn-primary" data-action="email-auth" ${disabled}>${submitLabel}</button>
           </form>
         </div>
       </div>
@@ -2682,12 +3009,10 @@
         `<option value="${t.id}" ${g.tone === t.id ? "selected" : ""}>${escapeHtml(t.label)}</option>`
     ).join("");
 
-    const presetAvatars = Object.entries(AVATAR_PRESETS)
-      .map(
-        ([id, p]) =>
-          `<button type="button" class="avatar-preset ${g.avatar?.type === "preset" && g.avatar?.value === id ? "active" : ""}" data-action="set-avatar-preset" data-preset="${id}" title="${escapeHtml(p.label)}">${p.emoji}</button>`
-      )
-      .join("");
+    const hasPhoto = g.avatar?.type === "upload" && g.avatar?.value;
+    const clearBtn = hasPhoto
+      ? `<button type="button" class="btn btn-ghost btn-sm" data-action="clear-avatar">Убрать фото</button>`
+      : "";
 
     const referralCount = user.referralsCount || 0;
     const bonusDays = (state.subscription.bonusDays || 0) + (user.referralBonusDays || 0);
@@ -2704,11 +3029,13 @@
 
           <div class="avatar-picker">
             <p class="picker-label">Аватар</p>
-            <div class="avatar-presets">${presetAvatars}</div>
-            <label class="btn btn-ghost btn-sm avatar-upload-btn">
-              Загрузить фото
-              <input type="file" accept="image/*" data-action="avatar-upload" hidden />
-            </label>
+            <div class="avatar-actions">
+              <label class="btn btn-ghost btn-sm avatar-upload-btn">
+                Загрузить фото
+                <input id="avatar-file-input" type="file" accept="image/*" hidden />
+              </label>
+              ${clearBtn}
+            </div>
           </div>
 
           <div class="level-block">
@@ -3699,6 +4026,7 @@
     if (form) {
       form.onsubmit = (e) => {
         e.preventDefault();
+        if (ui.authLoading) return;
         const email = document.getElementById("auth-email")?.value || "";
         const password = document.getElementById("auth-password")?.value || "";
         loginWithEmail(email, password);
@@ -3728,6 +4056,14 @@
       dateInput.onchange = (e) => {
         ui.calendar.date = parseDateKey(e.target.value).toISOString();
         render();
+      };
+    }
+    const avatarInput = root.querySelector("#avatar-file-input");
+    if (avatarInput) {
+      avatarInput.onchange = (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = "";
+        if (file) handleAvatarUpload(file);
       };
     }
   }
@@ -3793,19 +4129,22 @@
         logout();
         break;
       case "social-start":
-        ui.modal = { type: "socialName", provider: btn.dataset.provider };
-        render();
+        if (ui.authLoading) break;
+        startSocialLogin(btn.dataset.provider);
         break;
       case "social-confirm": {
+        if (ui.authLoading) break;
         const name = document.getElementById("social-name-input")?.value || "";
-        completeSocialLogin(ui.modal.provider, name);
+        completeSocialLogin(ui.modal?.provider, name);
         break;
       }
       case "social-skip":
-        completeSocialLogin(ui.modal.provider, "");
+        if (ui.authLoading) break;
+        completeSocialLogin(ui.modal?.provider, "");
         break;
       case "email-auth": {
         e.preventDefault();
+        if (ui.authLoading) break;
         const email = document.getElementById("auth-email")?.value || "";
         const password = document.getElementById("auth-password")?.value || "";
         loginWithEmail(email, password);
@@ -3920,8 +4259,8 @@
       case "skip":
         skipTask(btn.dataset.id);
         break;
-      case "set-avatar-preset":
-        setAvatarPreset(btn.dataset.preset);
+      case "clear-avatar":
+        clearAvatar();
         break;
       case "share-product":
         shareProduct(btn.dataset.name || "товар");
