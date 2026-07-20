@@ -591,14 +591,49 @@
 
   function loadUsers() {
     try {
-      return JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
+      const raw = localStorage.getItem(USERS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   }
 
+  function sanitizeUserForStorage(user) {
+    if (!user || typeof user !== "object") return user;
+    const copy = { ...user };
+    // Не храним тяжёлые base64-аватары в списке пользователей — иначе localStorage переполняется и вход ломается
+    if (copy.avatar && copy.avatar.type === "upload") {
+      copy.avatar = { type: "letter", value: "" };
+    }
+    return copy;
+  }
+
   function saveUsers(users) {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    try {
+      const safe = (users || []).map(sanitizeUserForStorage);
+      localStorage.setItem(USERS_KEY, JSON.stringify(safe));
+    } catch (e) {
+      console.error("saveUsers failed:", e);
+      try {
+        // Последняя попытка: сохранить без лишних полей
+        const minimal = (users || []).map((u) => ({
+          id: u.id,
+          email: u.email || "",
+          password: u.password || null,
+          name: u.name || "",
+          provider: u.provider || "email",
+          referralCode: u.referralCode || u.id,
+          referralsCount: u.referralsCount || 0,
+          referralBonusDays: u.referralBonusDays || 0,
+          referredBy: u.referredBy || null,
+        }));
+        localStorage.setItem(USERS_KEY, JSON.stringify(minimal));
+      } catch (e2) {
+        console.error("saveUsers fallback failed:", e2);
+      }
+    }
   }
 
   function loadSession() {
@@ -610,11 +645,16 @@
   }
 
   function saveSession(session) {
-    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else localStorage.removeItem(SESSION_KEY);
+    try {
+      if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (e) {
+      console.error("saveSession failed:", e);
+    }
   }
 
   function getUserById(id) {
+    if (!id) return null;
     return loadUsers().find((u) => u.id === id) || null;
   }
 
@@ -625,12 +665,55 @@
   }
 
   function upsertUser(user) {
+    if (!user?.id) return user;
     const users = loadUsers();
     const i = users.findIndex((u) => u.id === user.id);
-    if (i >= 0) users[i] = user;
-    else users.push(user);
+    const clean = sanitizeUserForStorage(user);
+    if (i >= 0) users[i] = { ...users[i], ...clean };
+    else users.push(clean);
     saveUsers(users);
     return user;
+  }
+
+  function resolveCurrentUser() {
+    if (currentUser?.id) {
+      return {
+        ...currentUser,
+        name: currentUser.name || state?.profile?.name || "Пользователь",
+        email: currentUser.email || state?.profile?.email || "",
+        provider: currentUser.provider || state?.profile?.provider || "email",
+      };
+    }
+    const session = loadSession();
+    if (session?.userId) {
+      const fromDb = getUserById(session.userId);
+      if (fromDb) return fromDb;
+      return {
+        id: session.userId,
+        name: session.name || state?.profile?.name || "Пользователь",
+        email: session.email || state?.profile?.email || "",
+        provider: session.provider || state?.profile?.provider || "email",
+        referralsCount: 0,
+        referralBonusDays: 0,
+      };
+    }
+    if (state?.profile) {
+      return {
+        id: null,
+        name: state.profile.name || "Гость",
+        email: state.profile.email || "",
+        provider: state.profile.provider || "email",
+        referralsCount: 0,
+        referralBonusDays: 0,
+      };
+    }
+    return {
+      name: "Гость",
+      email: "",
+      provider: "email",
+      referralsCount: 0,
+      referralBonusDays: 0,
+    };
   }
 
   function defaultNotifSettings() {
@@ -1922,84 +2005,80 @@
   }
 
   // ——— Auth ———
-  async function enterAppAs(user, { isNewUser = false } = {}) {
+  function enterAppAs(user, { isNewUser = false } = {}) {
     if (!user?.id) {
       ui.authError = "Не удалось определить пользователя";
       ui.authLoading = false;
       ui.modal = null;
+      ui.screen = "auth";
       render();
-      return;
+      return false;
     }
 
     try {
-      if (!user.referralCode) {
-        user.referralCode = user.id;
-        user.referralsCount = user.referralsCount || 0;
-        user.referralBonusDays = user.referralBonusDays || 0;
-      }
-      upsertUser(user);
+      if (!user.referralCode) user.referralCode = user.id;
+      user.referralsCount = user.referralsCount || 0;
+      user.referralBonusDays = user.referralBonusDays || 0;
+      user.name = String(user.name || "").trim() || "Пользователь";
+      user.provider = user.provider || "email";
+      user.email = user.email || "";
 
-      currentUser = user;
+      upsertUser(user);
+      currentUser = { ...user };
+
       saveSession({
         userId: user.id,
-        email: user.email || "",
-        name: user.name || "",
-        provider: user.provider || "email",
+        email: user.email,
+        name: user.name,
+        provider: user.provider,
       });
-
-      ui.screen = "app";
-      ui.authError = "";
-      ui.authLoading = false;
-      ui.modal = null;
-      ui.tab = "homes";
-      ui.view = "houses";
-      ui.planView = "rooms";
-      ui.activeRoomId = null;
 
       if (isNewUser) {
         state = createFreshState();
         markFirstLaunch();
       } else {
         migrateLegacyState(user.id);
-        state = loadState(user.id) || createFreshState();
-        if (!state.houses?.length) {
+        state = loadState(user.id);
+        if (!state?.houses?.length) {
           state = createFreshState();
           markFirstLaunch();
-          isNewUser = true;
         }
       }
 
       state = normalizeAppState(state);
       state.profile = {
-        ...(state.profile || {}),
         name: user.name,
-        email: user.email || "",
-        provider: user.provider || "email",
+        email: user.email,
+        provider: user.provider,
       };
       state.lastVisitDate = new Date().toISOString();
-      state.activeHouseId = state.activeHouseId || state.houses[0]?.id;
+      if (!state.activeHouseId || !state.houses.some((h) => h.id === state.activeHouseId)) {
+        state.activeHouseId = state.houses[0].id;
+      }
       ui.activeHouseId = state.activeHouseId;
 
       migrateState();
-      applyReferralBonusToSubscription();
+      try {
+        applyReferralBonusToSubscription();
+      } catch (e) {
+        console.warn(e);
+      }
       saveState();
 
-      if (isNewUser && isSupabaseReady() && supabase) {
-        try {
-          const {
-            data: { user: authUser },
-          } = await supabase.auth.getUser();
-          if (authUser) await seedDefaultDataToDb(state);
-        } catch (e) {
-          console.warn("seedDefaultDataToDb:", e);
-        }
-      }
+      ui.screen = "app";
+      ui.authError = "";
+      ui.authLoading = false;
+      ui.modal = null;
+      ui.tab = "profile";
+      ui.view = "houses";
+      ui.planView = "rooms";
+      ui.activeRoomId = null;
 
       continueBootAfterAuth();
+      return true;
     } catch (e) {
       console.error("enterAppAs failed:", e);
-      // Даже при ошибке пост-логина оставляем сессию и показываем приложение с чистым состоянием
-      currentUser = user;
+      currentUser = { ...user };
       saveSession({
         userId: user.id,
         email: user.email || "",
@@ -2015,23 +2094,19 @@
       state.activeHouseId = state.houses[0].id;
       ui.activeHouseId = state.houses[0].id;
       ui.screen = "app";
+      ui.tab = "profile";
       ui.authError = "";
       ui.authLoading = false;
       ui.modal = null;
-      saveState();
+      try {
+        saveState();
+      } catch (_) {}
       render();
-      toast("Вход выполнен");
+      return true;
     }
   }
 
-  async function logout() {
-    if (isSupabaseReady() && supabase) {
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {
-        console.warn(e);
-      }
-    }
+  function logout() {
     saveSession(null);
     currentUser = null;
     state = null;
@@ -2045,7 +2120,7 @@
     render();
   }
 
-  async function loginWithEmail(email, password) {
+  function loginWithEmail(email, password) {
     const cleaned = String(email || "").trim().toLowerCase();
     const pass = String(password || "");
 
@@ -2076,12 +2151,12 @@
             `Этот email привязан к входу через ${PROVIDER_LABELS[user.provider] || user.provider}`
           );
         }
-        if (user.password !== pass) {
+        if (String(user.password) !== pass) {
           throw new Error("Неверный пароль");
         }
         user.provider = "email";
         user.email = cleaned;
-        if (!user.name) user.name = cleaned.split("@")[0] || "Пользователь";
+        user.name = user.name || cleaned.split("@")[0] || "Пользователь";
         upsertUser(user);
       } else {
         isNewUser = true;
@@ -2098,18 +2173,33 @@
           referredBy: null,
         };
         user.referralCode = user.id;
-        await processReferralForNewUser(user);
         upsertUser(user);
+        try {
+          processReferralForNewUser(user);
+        } catch (_) {}
       }
 
-      await enterAppAs(user, { isNewUser });
-      toast(
-        isNewUser
-          ? getMessage("accountCreated")
-          : getMessage("welcomeBack", { name: user.name })
-      );
+      const ok = enterAppAs(user, { isNewUser });
+      if (ok) {
+        try {
+          toast(
+            isNewUser
+              ? getMessage("accountCreated")
+              : getMessage("welcomeBack", { name: user.name })
+          );
+        } catch (_) {
+          toast(isNewUser ? "Аккаунт создан" : `С возвращением, ${user.name}!`);
+        }
+      }
     } catch (e) {
       console.error("loginWithEmail:", e);
+      // Не сбрасываем вход, если сессия уже создана
+      if (currentUser && ui.screen === "app" && state) {
+        try {
+          toast(e.message || "Вход выполнен с предупреждением");
+        } catch (_) {}
+        return;
+      }
       ui.authLoading = false;
       ui.authError = e.message || "Ошибка входа";
       ui.screen = "auth";
@@ -2125,7 +2215,7 @@
     render();
   }
 
-  async function completeSocialLogin(provider, name) {
+  function completeSocialLogin(provider, name) {
     if (!provider) return;
 
     const displayName = String(name || "").trim();
@@ -2165,18 +2255,27 @@
           referredBy: null,
         };
         user.referralCode = user.id;
-        await processReferralForNewUser(user);
         upsertUser(user);
+        try {
+          processReferralForNewUser(user);
+        } catch (_) {}
       }
 
-      await enterAppAs(user, { isNewUser });
-      toast(
-        isNewUser
-          ? getMessage("accountCreated")
-          : getMessage("welcomeBack", { name: user.name })
-      );
+      const ok = enterAppAs(user, { isNewUser });
+      if (ok) {
+        try {
+          toast(
+            isNewUser
+              ? getMessage("accountCreated")
+              : getMessage("welcomeBack", { name: user.name })
+          );
+        } catch (_) {
+          toast(`Здравствуйте, ${displayName}!`);
+        }
+      }
     } catch (e) {
       console.error("completeSocialLogin:", e);
+      if (currentUser && ui.screen === "app" && state) return;
       ui.authLoading = false;
       ui.authError = e.message || "Не удалось войти";
       ui.modal = { type: "socialName", provider };
@@ -3049,17 +3148,125 @@
   }
 
   function profileView() {
-    const user = currentUser || {
-      name: state?.profile?.name || "Гость",
-      email: state?.profile?.email || "",
-      provider: state?.profile?.provider || "email",
-      referralsCount: 0,
-      referralBonusDays: 0,
-    };
+    const user = resolveCurrentUser();
     const g = ensureGamification();
     const name = user.name || "Пользователь";
     const providerLabel = PROVIDER_LABELS[user.provider] || user.provider || "Почта";
-    const accountLine = accountDisplay(user);
+    const accountLine =
+      user.provider === "email" && user.email
+        ? user.email
+        : `Вход через ${providerLabel}`;
+    const notifSettings = syncNotifPermission();
+    const notifChecked = notifSettings.enabled ? "checked" : "";
+    const level = getLevelInfo(g.points);
+    const statsEntries = Object.entries(g.actionStats || {}).sort((a, b) => b[1] - a[1]);
+    const totalFloor = g.totalFloorAreaCleaned || 0;
+    const floorStatHtml =
+      totalFloor > 0
+        ? `<li class="floor-stat"><span>Вымыто полов</span><strong>${totalFloor} м²</strong></li>`
+        : "";
+
+    const statsHtml = statsEntries.length
+      ? floorStatHtml +
+        statsEntries
+          .map(
+            ([action, count]) =>
+              `<li><span>${escapeHtml(action)}</span><strong>${count} раз</strong></li>`
+          )
+          .join("")
+      : floorStatHtml ||
+        `<li class="empty-stat">Пока нет выполненных дел — начните с одной задачи!</li>`;
+
+    const historyHtml = (g.rewardHistory || [])
+      .slice(0, 8)
+      .map(
+        (h) =>
+          `<li class="history-${h.kind || "reward"}">
+            <span>${escapeHtml(h.title)}</span>
+            <strong>${h.points > 0 ? "+" : ""}${h.points}</strong>
+          </li>`
+      )
+      .join("");
+
+    const toneOptions = TONE_OPTIONS.map(
+      (t) =>
+        `<option value="${t.id}" ${g.tone === t.id ? "selected" : ""}>${escapeHtml(t.label)}</option>`
+    ).join("");
+
+    const hasPhoto = g.avatar?.type === "upload" && g.avatar?.value;
+    const clearBtn = hasPhoto
+      ? `<button type="button" class="btn btn-ghost btn-sm" data-action="clear-avatar">Убрать фото</button>`
+      : "";
+
+    const referralCount = user.referralsCount || 0;
+    const bonusDays = (state.subscription.bonusDays || 0) + (user.referralBonusDays || 0);
+
+    return `
+      <div class="screen profile-screen">
+        <h1 class="brand">Профиль</h1>
+        <p class="sub">Вы вошли в аккаунт</p>
+        <div class="profile-card">
+          <div class="avatar avatar-lg">${getAvatarHtml(user, g)}</div>
+          <h2 class="profile-name">${escapeHtml(name)}</h2>
+          <p class="profile-meta"><strong>Имя:</strong> ${escapeHtml(name)}</p>
+          <p class="profile-meta"><strong>Аккаунт:</strong> ${escapeHtml(accountLine)}</p>
+          <p class="profile-meta"><strong>Способ входа:</strong> ${escapeHtml(providerLabel)}</p>
+
+          <div class="avatar-picker">
+            <p class="picker-label">Аватар</p>
+            <div class="avatar-actions">
+              <label class="btn btn-ghost btn-sm avatar-upload-btn">
+                Загрузить фото
+                <input id="avatar-file-input" type="file" accept="image/*" hidden />
+              </label>
+              ${clearBtn}
+            </div>
+          </div>
+
+          <div class="level-block">
+            <div class="level-head">
+              <span class="level-name">${escapeHtml(level.name)}</span>
+              <span class="level-pts">${level.points} / 1000 очков</span>
+            </div>
+            <div class="level-bar"><div class="level-fill" style="width:${level.progressPct}%"></div></div>
+            <p class="level-next">${level.nextName ? `До «${escapeHtml(level.nextName)}»: ${level.nextMin} очков` : "Максимальный уровень!"}</p>
+          </div>
+
+          <div class="stats-block">
+            <p class="picker-label">Статистика действий</p>
+            <ul class="stats-list">${statsHtml}</ul>
+          </div>
+
+          <div class="referral-block">
+            <p class="picker-label">Реферальная программа</p>
+            <p class="profile-meta">Приглашено друзей: <strong>${referralCount}</strong></p>
+            <p class="profile-meta">Бонусных дней подписки: <strong>+${bonusDays}</strong></p>
+          </div>
+
+          <div class="field" style="text-align:left;margin-top:16px">
+            <label for="tone-select">Тон сообщений</label>
+            <select id="tone-select">${toneOptions}</select>
+          </div>
+
+          <div class="notif-block">
+            <label class="switch-row">
+              <span>Уведомления</span>
+              <input type="checkbox" data-action="toggle-notifications" ${notifChecked} />
+            </label>
+            <p class="profile-meta notif-status">Статус: ${escapeHtml(notifPermissionLabel())}</p>
+          </div>
+
+          ${
+            historyHtml
+              ? `<div class="stats-block"><p class="picker-label">История наград</p><ul class="stats-list">${historyHtml}</ul></div>`
+              : ""
+          }
+
+          <button type="button" class="btn btn-ghost" style="width:100%;margin-top:18px" data-action="logout">Выйти</button>
+        </div>
+      </div>
+    `;
+  }
     const notifSettings = syncNotifPermission();
     const notifChecked = notifSettings.enabled ? "checked" : "";
     const level = getLevelInfo(g.points);
