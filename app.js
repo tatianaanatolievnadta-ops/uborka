@@ -522,29 +522,75 @@
   function accountDisplay(user) {
     if (!user) return "—";
     if (user.provider === "email" && user.email) return user.email;
+    if (user.socialLogin) {
+      const via = PROVIDER_LABELS[user.provider] || user.provider || "соцсеть";
+      return `${via}: ${user.socialLogin}`;
+    }
     const via = PROVIDER_LABELS[user.provider] || user.provider || "соцсеть";
     return `Вход через ${via}`;
   }
 
-  function findSocialUser(provider, name) {
-    const key = String(name || "")
+  function socialLoginHints(provider) {
+    if (provider === "google") {
+      return {
+        accountLabel: "Email аккаунта Google",
+        accountPlaceholder: "name@gmail.com",
+        nameLabel: "Как к вам обращаться",
+        namePlaceholder: "Например, Анна",
+        hint: "Укажите email вашего Google-аккаунта и имя. Без этих данных вход невозможен.",
+      };
+    }
+    if (provider === "vk") {
+      return {
+        accountLabel: "Логин или ID ВКонтакте",
+        accountPlaceholder: "id123456 или логин",
+        nameLabel: "Как к вам обращаться",
+        namePlaceholder: "Например, Анна",
+        hint: "Укажите логин/ID вашего аккаунта VK и имя. Без этих данных вход невозможен.",
+      };
+    }
+    if (provider === "telegram") {
+      return {
+        accountLabel: "Username в Telegram",
+        accountPlaceholder: "@username",
+        nameLabel: "Как к вам обращаться",
+        namePlaceholder: "Например, Анна",
+        hint: "Укажите @username Telegram и имя. Без этих данных вход невозможен.",
+      };
+    }
+    return {
+      accountLabel: "Логин аккаунта",
+      accountPlaceholder: "Логин",
+      nameLabel: "Имя",
+      namePlaceholder: "Ваше имя",
+      hint: "Введите логин аккаунта и имя.",
+    };
+  }
+
+  function normalizeSocialLogin(value) {
+    return String(value || "")
       .trim()
+      .replace(/^@+/, "")
       .toLowerCase();
+  }
+
+  function findSocialUser(provider, socialLogin) {
+    const key = normalizeSocialLogin(socialLogin);
     if (!key) return null;
     return (
       loadUsers().find(
-        (u) => u.provider === provider && String(u.name || "").trim().toLowerCase() === key
+        (u) =>
+          u.provider === provider &&
+          normalizeSocialLogin(u.socialLogin || u.email) === key
       ) || null
     );
   }
 
-  function socialAccountEmail(provider, name) {
-    const slug = String(name || "user")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-zа-яё0-9]+/gi, ".")
+  function socialAccountEmail(provider, socialLogin) {
+    const slug = normalizeSocialLogin(socialLogin)
+      .replace(/[^a-zа-яё0-9._-]+/gi, ".")
       .replace(/^\.+|\.+$/g, "")
-      .slice(0, 32) || "user";
+      .slice(0, 48) || "user";
     return `${slug}@${provider}.local`;
   }
 
@@ -621,6 +667,7 @@
         const minimal = (users || []).map((u) => ({
           id: u.id,
           email: u.email || "",
+          socialLogin: u.socialLogin || "",
           password: u.password || null,
           name: u.name || "",
           provider: u.provider || "email",
@@ -682,6 +729,7 @@
         name: currentUser.name || state?.profile?.name || "Пользователь",
         email: currentUser.email || state?.profile?.email || "",
         provider: currentUser.provider || state?.profile?.provider || "email",
+        socialLogin: currentUser.socialLogin || "",
       };
     }
     const session = loadSession();
@@ -693,6 +741,7 @@
         name: session.name || state?.profile?.name || "Пользователь",
         email: session.email || state?.profile?.email || "",
         provider: session.provider || state?.profile?.provider || "email",
+        socialLogin: session.socialLogin || "",
         referralsCount: 0,
         referralBonusDays: 0,
       };
@@ -2016,6 +2065,7 @@
         email: user.email,
         name: user.name,
         provider: user.provider,
+        socialLogin: user.socialLogin || "",
       });
 
       if (isNewUser) {
@@ -2069,6 +2119,7 @@
         email: user.email || "",
         name: user.name || "",
         provider: user.provider || "email",
+        socialLogin: user.socialLogin || "",
       });
       state = createFreshState();
       state.profile = {
@@ -2200,15 +2251,38 @@
     render();
   }
 
-  function completeSocialLogin(provider, name) {
+  function completeSocialLogin(provider, socialLoginRaw, displayNameRaw) {
     if (!provider) return;
 
-    const displayName = String(name || "").trim();
-    if (!displayName) {
-      ui.authError = "Введите имя, чтобы войти";
-      toast("Введите имя");
+    const socialLogin = normalizeSocialLogin(socialLoginRaw);
+    const displayName = String(displayNameRaw || "").trim();
+    const hints = socialLoginHints(provider);
+
+    if (!socialLogin || socialLogin.length < 2) {
+      ui.authError = `Укажите ${hints.accountLabel.toLowerCase()}`;
+      toast(ui.authError);
       render();
-      document.getElementById("social-name-input")?.focus();
+      document.getElementById("social-login-input")?.focus();
+      return;
+    }
+    if (!displayName || displayName.length < 2) {
+      ui.authError = "Укажите, как к вам обращаться (минимум 2 буквы)";
+      toast(ui.authError);
+      ui.modal = { type: "socialName", provider };
+      render();
+      const loginEl = document.getElementById("social-login-input");
+      const nameEl = document.getElementById("social-name-input");
+      if (loginEl) loginEl.value = String(socialLoginRaw || "");
+      nameEl?.focus();
+      return;
+    }
+
+    // Для Google логин должен быть похож на email
+    if (provider === "google" && !socialLogin.includes("@")) {
+      ui.authError = "Для Google укажите полный email, например name@gmail.com";
+      toast(ui.authError);
+      render();
+      document.getElementById("social-login-input")?.focus();
       return;
     }
 
@@ -2217,19 +2291,25 @@
     render();
 
     try {
-      let user = findSocialUser(provider, displayName);
+      let user = findSocialUser(provider, socialLogin);
       let isNewUser = false;
+      const accountEmail =
+        provider === "google" && socialLogin.includes("@")
+          ? socialLogin
+          : socialAccountEmail(provider, socialLogin);
 
       if (user) {
         user.name = displayName;
         user.provider = provider;
-        user.email = user.email || socialAccountEmail(provider, displayName);
+        user.socialLogin = socialLogin;
+        user.email = accountEmail;
         upsertUser(user);
       } else {
         isNewUser = true;
         user = {
           id: uid(),
-          email: socialAccountEmail(provider, displayName),
+          email: accountEmail,
+          socialLogin,
           password: null,
           name: displayName,
           provider,
@@ -3140,10 +3220,7 @@
     const g = ensureGamification();
     const name = user.name || "Пользователь";
     const providerLabel = PROVIDER_LABELS[user.provider] || user.provider || "Почта";
-    const accountLine =
-      user.provider === "email" && user.email
-        ? user.email
-        : `Вход через ${providerLabel}`;
+    const accountLine = accountDisplay(user);
     const notifSettings = syncNotifPermission();
     const notifChecked = notifSettings.enabled ? "checked" : "";
     const level = getLevelInfo(g.points);
@@ -3723,7 +3800,9 @@
     const { type } = ui.modal;
 
     if (type === "socialName") {
-      const label = PROVIDER_LABELS[ui.modal.provider] || ui.modal.provider;
+      const provider = ui.modal.provider;
+      const label = PROVIDER_LABELS[provider] || provider;
+      const hints = socialLoginHints(provider);
       const err = ui.authError
         ? `<p class="auth-error">${escapeHtml(ui.authError)}</p>`
         : "";
@@ -3731,13 +3810,37 @@
         <div class="overlay center">
           <div class="modal">
             <h2>Вход через ${escapeHtml(label)}</h2>
-            <p class="modal-desc">Введите имя — оно будет показано в профиле. При повторном входе с тем же именем откроется ваш аккаунт.</p>
-            <div class="field">
-              <label for="social-name-input">Имя</label>
-              <input id="social-name-input" type="text" placeholder="Например, Анна" maxlength="40" autocomplete="name" required />
-            </div>
-            ${err}
-            <button type="button" class="btn btn-primary" data-action="social-confirm" ${ui.authLoading ? "disabled" : ""}>${ui.authLoading ? "Входим…" : "Войти"}</button>
+            <p class="modal-desc">${escapeHtml(hints.hint)}</p>
+            <form class="social-auth-form" data-action="social-auth-form" autocomplete="off">
+              <div class="field">
+                <label for="social-login-input">${escapeHtml(hints.accountLabel)}</label>
+                <input
+                  id="social-login-input"
+                  name="social_account_login"
+                  type="text"
+                  placeholder="${escapeHtml(hints.accountPlaceholder)}"
+                  maxlength="80"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="social-name-input">${escapeHtml(hints.nameLabel)}</label>
+                <input
+                  id="social-name-input"
+                  name="social_display_name"
+                  type="text"
+                  placeholder="${escapeHtml(hints.namePlaceholder)}"
+                  maxlength="40"
+                  autocomplete="off"
+                  required
+                />
+              </div>
+              ${err}
+              <button type="submit" class="btn btn-primary" ${ui.authLoading ? "disabled" : ""}>${ui.authLoading ? "Входим…" : "Войти"}</button>
+            </form>
             <button type="button" class="btn btn-ghost" style="width:100%;margin-top:8px" data-action="close-modal">Отмена</button>
           </div>
         </div>
@@ -4068,7 +4171,7 @@
       root.innerHTML = authView() + modalHtml();
       bindGlobal();
       if (ui.modal?.type === "socialName") {
-        document.getElementById("social-name-input")?.focus();
+        document.getElementById("social-login-input")?.focus();
       } else {
         document.getElementById("auth-email")?.focus();
       }
@@ -4250,13 +4353,33 @@
         if (file) handleAvatarUpload(file);
       };
     }
+    const socialForm = root.querySelector(".social-auth-form");
+    if (socialForm) {
+      socialForm.onsubmit = (e) => {
+        e.preventDefault();
+        if (ui.authLoading) return;
+        const login = document.getElementById("social-login-input")?.value || "";
+        const name = document.getElementById("social-name-input")?.value || "";
+        completeSocialLogin(ui.modal?.provider, login, name);
+      };
+    }
+    const socialLoginInput = root.querySelector("#social-login-input");
+    if (socialLoginInput) {
+      socialLoginInput.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          document.getElementById("social-name-input")?.focus();
+        }
+      };
+    }
     const socialNameInput = root.querySelector("#social-name-input");
     if (socialNameInput) {
       socialNameInput.onkeydown = (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
           if (ui.authLoading) return;
-          completeSocialLogin(ui.modal?.provider, socialNameInput.value);
+          const login = document.getElementById("social-login-input")?.value || "";
+          completeSocialLogin(ui.modal?.provider, login, socialNameInput.value);
         }
       };
     }
@@ -4326,10 +4449,14 @@
         if (ui.authLoading) break;
         startSocialLogin(btn.dataset.provider);
         break;
+      case "social-auth-form":
+        break;
       case "social-confirm": {
+        e.preventDefault();
         if (ui.authLoading) break;
+        const login = document.getElementById("social-login-input")?.value || "";
         const name = document.getElementById("social-name-input")?.value || "";
-        completeSocialLogin(ui.modal?.provider, name);
+        completeSocialLogin(ui.modal?.provider, login, name);
         break;
       }
       case "social-skip":
