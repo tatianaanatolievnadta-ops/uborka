@@ -331,16 +331,25 @@
   function refreshTaskRecommendations(task) {
     if (!task?.name) return;
     const fresh = defaultRecommendations(task.name);
-    if (!task.recommendations || isGenericRecommendation(task.recommendations)) {
-      task.recommendations = { ...fresh, image: task.recommendations?.image || "" };
+    const n = String(task.name).toLowerCase();
+    const isBedMake = n.includes("заправить") || n.includes("постел");
+    const isAir = n.includes("проветрить");
+    const shouldReplace =
+      !task.recommendations ||
+      isGenericRecommendation(task.recommendations) ||
+      ((isBedMake || isAir) &&
+        /тряпк|губк|швабр|перчатк|чистящ/i.test(
+          `${task.recommendations.inventory || ""} ${task.recommendations.means || ""}`
+        ));
+
+    if (shouldReplace) {
+      task.recommendations = {
+        ...fresh,
+        image: task.recommendations?.image || "",
+      };
     }
     if (!Array.isArray(task.products)) task.products = [];
-    // Для задач вроде «заправить постель» товары не нужны — убираем чужие остатки
-    const n = String(task.name).toLowerCase();
-    if (
-      (n.includes("заправить") || n.includes("постел") || n.includes("проветрить")) &&
-      task.products.length
-    ) {
+    if ((isBedMake || isAir) && task.products.length) {
       task.products = [];
     }
   }
@@ -1241,6 +1250,7 @@
           if (task.location == null) task.location = null;
           if (task.floorArea == null) task.floorArea = null;
           delete task.frequencyDays;
+          refreshTaskRecommendations(task);
         }
         if (room.width != null || room.length != null) {
           room.area = calcRoomArea(room.width, room.length);
