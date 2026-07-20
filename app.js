@@ -1676,10 +1676,6 @@
   function setAvatarUpload(base64) {
     const g = ensureGamification();
     g.avatar = { type: "upload", value: base64 };
-    if (currentUser) {
-      currentUser.avatar = g.avatar;
-      upsertUser(currentUser);
-    }
     saveState();
     render();
     toast("Фото загружено");
@@ -1688,10 +1684,6 @@
   function clearAvatar() {
     const g = ensureGamification();
     g.avatar = { type: "letter", value: "" };
-    if (currentUser) {
-      currentUser.avatar = g.avatar;
-      upsertUser(currentUser);
-    }
     saveState();
     render();
     toast("Аватар сброшен");
@@ -1875,18 +1867,11 @@
     if (!notificationsSupported()) return;
     const settings = loadNotifSettings();
     settings.permission = Notification.permission;
-
-    if (Notification.permission === "default" && !settings.permissionRequested) {
-      settings.permissionRequested = true;
-      saveNotifSettings(settings);
-      const perm = await Notification.requestPermission();
-      settings.permission = perm;
-      saveNotifSettings(settings);
-    } else {
-      saveNotifSettings(settings);
+    // Не запрашиваем разрешение автоматически при входе — только сохраняем статус
+    saveNotifSettings(settings);
+    if (settings.enabled && Notification.permission === "granted") {
+      showDailySummaryIfNeeded();
     }
-
-    showDailySummaryIfNeeded();
   }
 
   async function remindTask(taskId) {
@@ -2315,17 +2300,27 @@
         return;
       }
     }
-    currentUser = user;
-    ui.screen = "app";
-    migrateLegacyState(user.id);
+    currentUser = {
+      ...user,
+      name: user.name || session.name || "Пользователь",
+      email: user.email || session.email || "",
+      provider: user.provider || session.provider || "email",
+    };
+    // Синхронизируем актуальные поля сессии
+    if (session.name && !user.name) currentUser.name = session.name;
+    if (session.email && !user.email) currentUser.email = session.email;
+    upsertUser(currentUser);
 
-    const existing = loadState(user.id);
+    ui.screen = "app";
+    migrateLegacyState(currentUser.id);
+
+    const existing = loadState(currentUser.id);
     if (!existing) {
       state = createFreshState();
       state.profile = {
-        name: user.name,
-        email: user.email,
-        provider: user.provider,
+        name: currentUser.name,
+        email: currentUser.email,
+        provider: currentUser.provider,
       };
       state.activeHouseId = state.houses[0].id;
       ui.activeHouseId = state.houses[0].id;
@@ -2338,10 +2333,9 @@
 
     state = normalizeAppState(existing);
     state.profile = {
-      ...(state.profile || {}),
-      name: user.name,
-      email: user.email || "",
-      provider: user.provider || "email",
+      name: currentUser.name,
+      email: currentUser.email || "",
+      provider: currentUser.provider || "email",
     };
     ui.activeHouseId = state.activeHouseId || state.houses[0]?.id;
     continueBootAfterAuth();
@@ -2377,13 +2371,7 @@
   }
 
   function boot() {
-    if (isSupabaseReady() && supabase) {
-      bootWithSupabase().catch((e) => {
-        console.warn(e);
-        bootLocal();
-      });
-      return;
-    }
+    // Всегда локальный вход — аккаунт хранится в браузере
     bootLocal();
   }
 
@@ -3105,7 +3093,7 @@
         <div class="auth-card">
           <p class="auth-brand">Домашний план</p>
           <h1 class="auth-welcome">Добро пожаловать!</h1>
-          <p class="auth-lead">Войдите и держите уборку по всем домам под контролем.</p>
+          <p class="auth-lead">Войдите по почте или через кнопку соцсети (имя сохранится в этом браузере).</p>
 
           <div class="social-row" role="group" aria-label="Вход через соцсети">
             <button type="button" class="social-btn social-google" data-action="social-start" data-provider="google" title="Google" aria-label="Войти через Google" ${disabled}>
@@ -3262,113 +3250,6 @@
               : ""
           }
 
-          <button type="button" class="btn btn-ghost" style="width:100%;margin-top:18px" data-action="logout">Выйти</button>
-        </div>
-      </div>
-    `;
-  }
-    const notifSettings = syncNotifPermission();
-    const notifChecked = notifSettings.enabled ? "checked" : "";
-    const level = getLevelInfo(g.points);
-    const statsEntries = Object.entries(g.actionStats || {}).sort((a, b) => b[1] - a[1]);
-    const totalFloor = g.totalFloorAreaCleaned || 0;
-    const floorStatHtml =
-      totalFloor > 0
-        ? `<li class="floor-stat"><span>Вымыто полов</span><strong>${totalFloor} м²</strong></li>`
-        : "";
-
-    const statsHtml = statsEntries.length
-      ? floorStatHtml +
-        statsEntries
-          .map(
-            ([action, count]) =>
-              `<li><span>${escapeHtml(action)}</span><strong>${count} раз</strong></li>`
-          )
-          .join("")
-      : floorStatHtml ||
-        `<li class="empty-stat">Пока нет выполненных дел — начните с одной задачи!</li>`;
-
-    const historyHtml = (g.rewardHistory || [])
-      .slice(0, 8)
-      .map(
-        (h) =>
-          `<li class="history-${h.kind || "reward"}">
-            <span>${escapeHtml(h.title)}</span>
-            <strong>${h.points > 0 ? "+" : ""}${h.points}</strong>
-          </li>`
-      )
-      .join("");
-
-    const toneOptions = TONE_OPTIONS.map(
-      (t) =>
-        `<option value="${t.id}" ${g.tone === t.id ? "selected" : ""}>${escapeHtml(t.label)}</option>`
-    ).join("");
-
-    const hasPhoto = g.avatar?.type === "upload" && g.avatar?.value;
-    const clearBtn = hasPhoto
-      ? `<button type="button" class="btn btn-ghost btn-sm" data-action="clear-avatar">Убрать фото</button>`
-      : "";
-
-    const referralCount = user.referralsCount || 0;
-    const bonusDays = (state.subscription.bonusDays || 0) + (user.referralBonusDays || 0);
-
-    return `
-      <div class="screen profile-screen">
-        <h1 class="brand">Профиль</h1>
-        <p class="sub">${escapeHtml(getMessage("welcomeBack", { name }).split("!")[0])}!</p>
-        <div class="profile-card">
-          <div class="avatar avatar-lg">${getAvatarHtml(user, g)}</div>
-          <h2 class="profile-name">${escapeHtml(name)}</h2>
-          <p class="profile-meta">${escapeHtml(accountLine)}</p>
-          ${
-            user.provider === "email"
-              ? ""
-              : `<p class="profile-meta">Способ входа: ${escapeHtml(providerLabel)}</p>`
-          }
-
-          <div class="avatar-picker">
-            <p class="picker-label">Аватар</p>
-            <div class="avatar-actions">
-              <label class="btn btn-ghost btn-sm avatar-upload-btn">
-                Загрузить фото
-                <input id="avatar-file-input" type="file" accept="image/*" hidden />
-              </label>
-              ${clearBtn}
-            </div>
-          </div>
-
-          <div class="level-block">
-            <div class="level-head">
-              <span class="level-name">${escapeHtml(level.name)}</span>
-              <span class="level-pts">${level.points} / 1000 очков</span>
-            </div>
-            <div class="level-bar"><div class="level-fill" style="width:${level.progressPct}%"></div></div>
-            <p class="level-next">${level.nextName ? `До «${escapeHtml(level.nextName)}»: ${level.nextMin} очков` : "Максимальный уровень!"}</p>
-          </div>
-
-          <div class="stats-block">
-            <p class="picker-label">Статистика действий</p>
-            <ul class="stats-list">${statsHtml}</ul>
-          </div>
-
-          <div class="referral-block">
-            <p class="picker-label">Реферальная программа</p>
-            <p class="profile-meta">Приглашено друзей: <strong>${referralCount}</strong></p>
-            <p class="profile-meta">Бонусных дней подписки: <strong>+${bonusDays}</strong></p>
-          </div>
-
-          ${historyHtml ? `<div class="history-block"><p class="picker-label">История наград</p><ul class="history-list">${historyHtml}</ul></div>` : ""}
-
-          <div class="field" style="margin-top:16px">
-            <label for="tone-select">Тон общения</label>
-            <select id="tone-select" data-action="tone-select">${toneOptions}</select>
-          </div>
-
-          <label class="notif-toggle">
-            <input type="checkbox" data-action="toggle-notifications" ${notifChecked} />
-            <span>Включить уведомления</span>
-          </label>
-          <p class="profile-meta notif-status">Статус: ${escapeHtml(notifPermissionLabel())}</p>
           <button type="button" class="btn btn-ghost" style="width:100%;margin-top:18px" data-action="logout">Выйти</button>
         </div>
       </div>
