@@ -5,6 +5,7 @@
   const FIRST_LAUNCH_KEY = "multiHouseCleaner_firstLaunch";
   const USERS_KEY = "multiHouseCleaner_users";
   const SESSION_KEY = "multiHouseCleaner_session";
+  const LEGACY_MIGRATED_KEY = "multiHouseCleaner_legacyMigrated";
   const NOTIF_DAILY_KEY = "multiHouseCleaner_notifDailySummary";
   const DAY_MARK_KEY = "multiHouseCleaner_dayMark";
 
@@ -188,52 +189,160 @@
   }
 
   function defaultRecommendations(taskName) {
-    const map = {
-      "Помыть пол": {
+    const n = String(taskName || "").toLowerCase().trim();
+
+    const rules = [
+      {
+        keys: ["заправить", "постел", "кровать"],
+        means: "Не требуется",
+        inventory: "Не требуется",
+        motions:
+          "Встряхните простыню и ровно заправьте углы под матрас. Расправьте одеяло или плед, поправьте подушки, разгладьте складки — сверху вниз от изголовья.",
+      },
+      {
+        keys: ["помыть пол", "помыть полы", "вымыть пол", "вымыть полы"],
         means: "Универсальное средство для пола или вода с уксусом",
         inventory: "Швабра, ведро, тряпка из микрофибры",
         motions: "От дальнего угла к выходу, восьмёрками, не заходя на мокрое",
-        image: "",
       },
-      "Помыть полы": {
-        means: "Универсальное средство для пола или вода с уксусом",
-        inventory: "Швабра, ведро, тряпка из микрофибры",
-        motions: "От дальнего угла к выходу, восьмёрками, не заходя на мокрое",
-        image: "",
+      {
+        keys: ["пропылесос"],
+        means: "Не требуется",
+        inventory: "Пылесос, насадки",
+        motions: "Сначала уберите крупный мусор, затем пылесосьте от дальних углов к выходу, не забывая плинтусы",
       },
-      "Протереть пыль": {
+      {
+        keys: ["пыль"],
         means: "Антистатический спрей или слегка влажная салфетка",
         inventory: "Микрофибра, стремянка при необходимости",
         motions: "Сверху вниз, не круговыми движениями — чтобы не размазать",
-        image: "",
       },
-      "Вымыть раковину": {
+      {
+        keys: ["раковин"],
         means: "Крем-чистящее для сантехники, сода",
         inventory: "Губка, старая зубная щётка для смесителя",
         motions: "Нанести — подождать 2–3 мин — круговыми движениями — сполоснуть",
-        image: "",
       },
-      [SHELF_TASK_NAME]: {
+      {
+        keys: ["унитаз"],
+        means: "Гель для унитаза или чистящее для сантехники",
+        inventory: "Ёршик, перчатки, тряпка для сиденья",
+        motions: "Нанести средство под ободок, почистить ёршиком, протереть сиденье и кнопки, смыть",
+      },
+      {
+        keys: ["ванн", "душ"],
+        means: "Средство от известкового налёта / для акрила или эмали",
+        inventory: "Губка, перчатки",
+        motions: "Нанести — подождать — потереть стенки и дно — смыть водой",
+      },
+      {
+        keys: ["зеркал"],
+        means: "Спрей для стёкол или вода с уксусом",
+        inventory: "Салфетка из микрофибры",
+        motions: "Распылить на салфетку (не на зеркало), протереть вертикальными движениями до блеска",
+      },
+      {
+        keys: ["окн", "стекл"],
+        means: "Спрей для стёкол",
+        inventory: "Салфетка из микрофибры, водосгон",
+        motions: "Сначала рамы, затем стекло сверху вниз; насухо вытереть, чтобы не осталось разводов",
+      },
+      {
+        keys: ["проветрить"],
         means: "Не требуется",
-        inventory: "Коробки, корзины, салфетка",
-        motions: "Разобрать полку по категориям, протереть пыль, вернуть нужное, лишнее убрать",
-        image: "",
+        inventory: "Не требуется",
+        motions: "Откройте окна на 5–15 минут, выключите обогреватели у открытых окон, затем закройте",
       },
-      "Сменить гардероб на лето/зиму": {
+      {
+        keys: ["штор"],
+        means: "Стиральный порошок или гель для ткани штор",
+        inventory: "Таз / стиральная машина, прищепки",
+        motions: "Снять шторы, постирать по режиму ткани, высушить и повесить обратно",
+      },
+      {
+        keys: ["гардероб", "сезон"],
         means: "Не требуется",
         inventory: "Вешалки, коробки для хранения, мешки для стирки",
         motions: "Достать сезонные вещи, сложить несезонные, проверить чистоту перед хранением",
-        image: "",
       },
-    };
-    return (
-      map[taskName] || {
-        means: "Подходящее чистящее средство по типу поверхности",
-        inventory: "Тряпка, губка, перчатки",
-        motions: "От чистого к грязному, сверху вниз",
-        image: "",
+      {
+        keys: ["полк", "ящик"],
+        means: "Не требуется",
+        inventory: "Коробки, корзины, салфетка",
+        motions: "Разобрать полку по категориям, протереть пыль, вернуть нужное, лишнее убрать",
+      },
+      {
+        keys: ["плит", "духовк"],
+        means: "Обезжириватель или сода с водой",
+        inventory: "Губка, перчатки, старая зубная щётка",
+        motions: "Снять решётки, нанести средство, подождать, оттереть нагар, сполоснуть",
+      },
+      {
+        keys: ["холодильник"],
+        means: "Сода с водой или мягкое средство для кухни",
+        inventory: "Губка, тряпка, контейнеры для продуктов",
+        motions: "Выключить, вынуть продукты, вымыть полки сверху вниз, протереть насухо, разложить обратно",
+      },
+      {
+        keys: ["мягк", "диван", "кресл"],
+        means: "Пенный очиститель для обивки или пылесос с насадкой",
+        inventory: "Пылесос, щётка для мебели",
+        motions: "Пропылесосить складки и щели, при необходимости нанести очиститель и промокнуть",
+      },
+      {
+        keys: ["обувниц"],
+        means: "Влажная салфетка, при необходимости средство для кожи/замши",
+        inventory: "Салфетка, щётка",
+        motions: "Вынуть обувь, протереть полки, расставить обувь парами",
+      },
+    ];
+
+    for (const rule of rules) {
+      if (rule.keys.some((k) => n.includes(k))) {
+        return {
+          means: rule.means,
+          inventory: rule.inventory,
+          motions: rule.motions,
+          image: "",
+        };
       }
+    }
+
+    return {
+      means: "Не требуется",
+      inventory: "Не требуется",
+      motions: "Выполните задачу аккуратно и полностью, затем отметьте выполнение",
+      image: "",
+    };
+  }
+
+  function isGenericRecommendation(rec) {
+    if (!rec) return true;
+    const inv = String(rec.inventory || "").toLowerCase();
+    const means = String(rec.means || "").toLowerCase();
+    return (
+      inv.includes("тряпка, губка") ||
+      inv.includes("тряпка, губка, перчатки") ||
+      means.includes("подходящее чистящее средство по типу поверхности") ||
+      means.includes("подбирайте средство")
     );
+  }
+
+  function refreshTaskRecommendations(task) {
+    if (!task?.name) return;
+    const fresh = defaultRecommendations(task.name);
+    if (!task.recommendations || isGenericRecommendation(task.recommendations)) {
+      task.recommendations = { ...fresh, image: task.recommendations?.image || "" };
+    }
+    if (!Array.isArray(task.products)) task.products = [];
+    // Для задач вроде «заправить постель» товары не нужны — убираем чужие остатки
+    const n = String(task.name).toLowerCase();
+    if (
+      (n.includes("заправить") || n.includes("постел") || n.includes("проветрить")) &&
+      task.products.length
+    ) {
+      task.products = [];
+    }
   }
 
   function defaultProducts(taskName) {
@@ -386,10 +495,48 @@
 
   function migrateLegacyState(userId) {
     if (!userId) return;
+    // Старый общий ключ переносим только один раз — первому вошедшему пользователю
+    if (localStorage.getItem(LEGACY_MIGRATED_KEY)) return;
     const userKey = getStateKey(userId);
-    if (localStorage.getItem(userKey)) return;
+    if (localStorage.getItem(userKey)) {
+      localStorage.setItem(LEGACY_MIGRATED_KEY, userId);
+      return;
+    }
     const legacy = localStorage.getItem(STORAGE_KEY);
-    if (legacy) localStorage.setItem(userKey, legacy);
+    if (legacy) {
+      localStorage.setItem(userKey, legacy);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    localStorage.setItem(LEGACY_MIGRATED_KEY, userId);
+  }
+
+  function accountDisplay(user) {
+    if (!user) return "—";
+    if (user.provider === "email" && user.email) return user.email;
+    const via = PROVIDER_LABELS[user.provider] || user.provider || "соцсеть";
+    return `Вход через ${via}`;
+  }
+
+  function findSocialUser(provider, name) {
+    const key = String(name || "")
+      .trim()
+      .toLowerCase();
+    if (!key) return null;
+    return (
+      loadUsers().find(
+        (u) => u.provider === provider && String(u.name || "").trim().toLowerCase() === key
+      ) || null
+    );
+  }
+
+  function socialAccountEmail(provider, name) {
+    const slug = String(name || "user")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-zа-яё0-9]+/gi, ".")
+      .replace(/^\.+|\.+$/g, "")
+      .slice(0, 32) || "user";
+    return `${slug}@${provider}.local`;
   }
 
   function normalizeAppState(raw) {
@@ -464,7 +611,8 @@
 
   function getUserByEmail(email) {
     const key = String(email || "").trim().toLowerCase();
-    return loadUsers().find((u) => u.email.toLowerCase() === key) || null;
+    if (!key) return null;
+    return loadUsers().find((u) => String(u.email || "").toLowerCase() === key) || null;
   }
 
   function upsertUser(user) {
@@ -1764,97 +1912,105 @@
   }
 
   // ——— Auth ———
-  function authRedirectUrl() {
-    return window.location.origin + window.location.pathname + window.location.search;
-  }
-
-  function mapSupabaseAuthError(error) {
-    const msg = String(error?.message || error || "");
-    if (msg.includes("Invalid login credentials")) return "Неверный email или пароль";
-    if (msg.includes("User already registered")) return "Этот email уже зарегистрирован — войдите с паролем";
-    if (msg.includes("Email not confirmed")) return "Подтвердите email по ссылке из письма";
-    if (msg.includes("Password should be at least")) return "Пароль не менее 6 символов";
-    return msg || "Ошибка входа";
-  }
-
   async function enterAppAs(user, { isNewUser = false } = {}) {
     if (!user?.id) {
       ui.authError = "Не удалось определить пользователя";
       ui.authLoading = false;
+      ui.modal = null;
       render();
       return;
     }
 
-    if (!user.referralCode) {
-      user.referralCode = user.id;
-      user.referralsCount = user.referralsCount || 0;
-      user.referralBonusDays = user.referralBonusDays || 0;
-      upsertUser(user);
-    }
-
-    currentUser = user;
-    saveSession({ userId: user.id, email: user.email });
-    ui.screen = "app";
-    ui.authError = "";
-    ui.authLoading = false;
-    ui.modal = null;
-    ui.tab = "homes";
-    ui.view = "houses";
-
     try {
-      migrateLegacyState(user.id);
+      if (!user.referralCode) {
+        user.referralCode = user.id;
+        user.referralsCount = user.referralsCount || 0;
+        user.referralBonusDays = user.referralBonusDays || 0;
+      }
+      upsertUser(user);
 
-      if (isSupabaseReady() && supabase) {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
+      currentUser = user;
+      saveSession({
+        userId: user.id,
+        email: user.email || "",
+        name: user.name || "",
+        provider: user.provider || "email",
+      });
 
-        if (authUser) {
-          let existing = await loadUserData();
-          if (existing?.houses?.length) {
-            state = normalizeAppState(existing);
-          } else {
-            state = loadStateForUser(user.id, isNewUser);
-            if (!state?.houses?.length) state = createFreshState();
-            isNewUser = true;
-          }
-        } else {
-          state = loadStateForUser(user.id, isNewUser);
-        }
+      ui.screen = "app";
+      ui.authError = "";
+      ui.authLoading = false;
+      ui.modal = null;
+      ui.tab = "homes";
+      ui.view = "houses";
+      ui.planView = "rooms";
+      ui.activeRoomId = null;
+
+      if (isNewUser) {
+        state = createFreshState();
+        markFirstLaunch();
       } else {
-        state = loadStateForUser(user.id, isNewUser);
+        migrateLegacyState(user.id);
+        state = loadState(user.id) || createFreshState();
+        if (!state.houses?.length) {
+          state = createFreshState();
+          markFirstLaunch();
+          isNewUser = true;
+        }
       }
 
-      if (!state.profile) state.profile = {};
-      state.profile.name = user.name;
-      state.profile.email = user.email;
-      state.profile.provider = user.provider;
+      state = normalizeAppState(state);
+      state.profile = {
+        ...(state.profile || {}),
+        name: user.name,
+        email: user.email || "",
+        provider: user.provider || "email",
+      };
       state.lastVisitDate = new Date().toISOString();
       state.activeHouseId = state.activeHouseId || state.houses[0]?.id;
       ui.activeHouseId = state.activeHouseId;
+
       migrateState();
       applyReferralBonusToSubscription();
       saveState();
 
       if (isNewUser && isSupabaseReady() && supabase) {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
-        if (authUser) {
-          await seedDefaultDataToDb(state);
+        try {
+          const {
+            data: { user: authUser },
+          } = await supabase.auth.getUser();
+          if (authUser) await seedDefaultDataToDb(state);
+        } catch (e) {
+          console.warn("seedDefaultDataToDb:", e);
         }
       }
 
       continueBootAfterAuth();
     } catch (e) {
       console.error("enterAppAs failed:", e);
-      currentUser = null;
-      saveSession(null);
-      state = null;
-      ui.screen = "auth";
-      ui.authError = "Не удалось войти. Попробуйте ещё раз.";
+      // Даже при ошибке пост-логина оставляем сессию и показываем приложение с чистым состоянием
+      currentUser = user;
+      saveSession({
+        userId: user.id,
+        email: user.email || "",
+        name: user.name || "",
+        provider: user.provider || "email",
+      });
+      state = createFreshState();
+      state.profile = {
+        name: user.name,
+        email: user.email || "",
+        provider: user.provider || "email",
+      };
+      state.activeHouseId = state.houses[0].id;
+      ui.activeHouseId = state.houses[0].id;
+      ui.screen = "app";
+      ui.authError = "";
       ui.authLoading = false;
+      ui.modal = null;
+      saveState();
       render();
+      toast("Вход выполнен");
     }
   }
 
@@ -1879,104 +2035,19 @@
     render();
   }
 
-  async function loginWithEmailSupabase(email, password) {
-    let isNewUser = false;
-    let result = await supabase.auth.signInWithPassword({ email, password });
-
-    if (result.error) {
-      if (
-        result.error.message.includes("Invalid login credentials") ||
-        result.error.message.includes("Invalid login")
-      ) {
-        isNewUser = true;
-        result = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { name: email.split("@")[0] || "Пользователь", provider: "email" },
-          },
-        });
-        if (result.error) throw new Error(mapSupabaseAuthError(result.error));
-
-        if (!result.data.session) {
-          ui.authLoading = false;
-          ui.authError =
-            "Аккаунт создан. Если включено подтверждение email — проверьте почту, затем войдите снова.";
-          render();
-          return;
-        }
-      } else {
-        throw new Error(mapSupabaseAuthError(result.error));
-      }
-    }
-
-    const authUser = result.data.user || result.data.session?.user;
-    if (!authUser) throw new Error("Не удалось получить данные пользователя");
-
-    const user = await mergeProfileIntoUser(mapAuthUser(authUser));
-    upsertUser({
-      id: user.id,
-      email: user.email,
-      password: null,
-      name: user.name,
-      provider: "email",
-      createdAt: new Date().toISOString(),
-      referralCode: user.referralCode,
-      referralsCount: user.referralsCount,
-      referralBonusDays: user.referralBonusDays,
-      referredBy: user.referredBy,
-    });
-    await processReferralForNewUser(user);
-    await enterAppAs(user, { isNewUser });
-    toast(isNewUser ? getMessage("accountCreated") : getMessage("welcomeBack", { name: user.name }));
-  }
-
-  async function loginWithEmailLocal(email, password) {
-    let user = getUserByEmail(email);
-    if (user) {
-      if (user.provider !== "email") {
-        throw new Error(
-          `Этот email привязан к входу через ${PROVIDER_LABELS[user.provider] || user.provider}`
-        );
-      }
-      if (user.password !== password) {
-        throw new Error("Неверный пароль");
-      }
-      await enterAppAs(user);
-      toast(getMessage("welcomeBack", { name: user.name }));
-      return;
-    }
-
-    user = upsertUser({
-      id: uid(),
-      email,
-      password,
-      name: email.split("@")[0] || "Пользователь",
-      provider: "email",
-      createdAt: new Date().toISOString(),
-      referralCode: null,
-      referralsCount: 0,
-      referralBonusDays: 0,
-      referredBy: null,
-    });
-    user.referralCode = user.id;
-    await processReferralForNewUser(user);
-    upsertUser(user);
-    await enterAppAs(user, { isNewUser: true });
-    toast(getMessage("accountCreated"));
-  }
-
   async function loginWithEmail(email, password) {
     const cleaned = String(email || "").trim().toLowerCase();
     const pass = String(password || "");
 
     if (!cleaned || !cleaned.includes("@")) {
       ui.authError = "Введите корректный email";
+      ui.authLoading = false;
       render();
       return;
     }
     if (pass.length < 4) {
       ui.authError = "Пароль не менее 4 символов";
+      ui.authLoading = false;
       render();
       return;
     }
@@ -1986,39 +2057,60 @@
     render();
 
     try {
-      if (isSupabaseReady() && supabase) {
-        if (pass.length < 6) {
-          throw new Error("При облачном входе пароль не менее 6 символов");
+      let user = getUserByEmail(cleaned);
+      let isNewUser = false;
+
+      if (user) {
+        if (user.provider && user.provider !== "email") {
+          throw new Error(
+            `Этот email привязан к входу через ${PROVIDER_LABELS[user.provider] || user.provider}`
+          );
         }
-        await loginWithEmailSupabase(cleaned, pass);
+        if (user.password !== pass) {
+          throw new Error("Неверный пароль");
+        }
+        user.provider = "email";
+        user.email = cleaned;
+        if (!user.name) user.name = cleaned.split("@")[0] || "Пользователь";
+        upsertUser(user);
       } else {
-        await loginWithEmailLocal(cleaned, pass);
+        isNewUser = true;
+        user = {
+          id: uid(),
+          email: cleaned,
+          password: pass,
+          name: cleaned.split("@")[0] || "Пользователь",
+          provider: "email",
+          createdAt: new Date().toISOString(),
+          referralCode: null,
+          referralsCount: 0,
+          referralBonusDays: 0,
+          referredBy: null,
+        };
+        user.referralCode = user.id;
+        await processReferralForNewUser(user);
+        upsertUser(user);
       }
+
+      await enterAppAs(user, { isNewUser });
+      toast(
+        isNewUser
+          ? getMessage("accountCreated")
+          : getMessage("welcomeBack", { name: user.name })
+      );
     } catch (e) {
       console.error("loginWithEmail:", e);
       ui.authLoading = false;
       ui.authError = e.message || "Ошибка входа";
+      ui.screen = "auth";
       render();
     }
   }
 
-  async function startSocialLogin(provider) {
-    if (isSupabaseReady() && supabase && provider === "google") {
-      ui.authLoading = true;
-      ui.authError = "";
-      render();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: authRedirectUrl() },
-      });
-      if (error) {
-        ui.authLoading = false;
-        ui.authError = mapSupabaseAuthError(error);
-        render();
-      }
-      return;
-    }
-
+  function startSocialLogin(provider) {
+    if (!provider) return;
+    ui.authError = "";
+    ui.authLoading = false;
     ui.modal = { type: "socialName", provider };
     render();
   }
@@ -2026,73 +2118,59 @@
   async function completeSocialLogin(provider, name) {
     if (!provider) return;
 
+    const displayName = String(name || "").trim();
+    if (!displayName) {
+      ui.authError = "Введите имя, чтобы войти";
+      toast("Введите имя");
+      render();
+      document.getElementById("social-name-input")?.focus();
+      return;
+    }
+
     ui.authLoading = true;
     ui.authError = "";
     render();
 
     try {
-      const displayName =
-        (name && name.trim()) ||
-        ({ google: "Google User", vk: "VK User", telegram: "Telegram User" }[provider] ||
-          "Пользователь");
+      let user = findSocialUser(provider, displayName);
+      let isNewUser = false;
 
-      if (isSupabaseReady() && supabase) {
-        const email = `user_${provider}_${Math.random().toString(36).slice(2, 10)}@demo.local`;
-        const password = `Demo_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { name: displayName, provider },
-          },
-        });
-        if (error) throw new Error(mapSupabaseAuthError(error));
-        if (!data.session?.user) {
-          throw new Error("Не удалось создать сессию. Попробуйте вход по email.");
-        }
-        const user = await mergeProfileIntoUser(mapAuthUser(data.session.user));
-        user.provider = provider;
+      if (user) {
         user.name = displayName;
-        upsertUser({
-          id: user.id,
-          email: user.email,
+        user.provider = provider;
+        user.email = user.email || socialAccountEmail(provider, displayName);
+        upsertUser(user);
+      } else {
+        isNewUser = true;
+        user = {
+          id: uid(),
+          email: socialAccountEmail(provider, displayName),
           password: null,
           name: displayName,
           provider,
           createdAt: new Date().toISOString(),
-          referralCode: user.referralCode,
+          referralCode: null,
           referralsCount: 0,
           referralBonusDays: 0,
           referredBy: null,
-        });
+        };
+        user.referralCode = user.id;
         await processReferralForNewUser(user);
-        await enterAppAs(user, { isNewUser: true });
-        toast(getMessage("accountCreated"));
-        return;
+        upsertUser(user);
       }
 
-      const email = `user_${provider}_${Math.random().toString(36).slice(2, 8)}@temp.com`;
-      const user = upsertUser({
-        id: uid(),
-        email,
-        password: null,
-        name: displayName,
-        provider,
-        createdAt: new Date().toISOString(),
-        referralCode: null,
-        referralsCount: 0,
-        referralBonusDays: 0,
-        referredBy: null,
-      });
-      user.referralCode = user.id;
-      await processReferralForNewUser(user);
-      upsertUser(user);
-      await enterAppAs(user, { isNewUser: true });
-      toast(getMessage("accountCreated"));
+      await enterAppAs(user, { isNewUser });
+      toast(
+        isNewUser
+          ? getMessage("accountCreated")
+          : getMessage("welcomeBack", { name: user.name })
+      );
     } catch (e) {
       console.error("completeSocialLogin:", e);
       ui.authLoading = false;
-      ui.authError = e.message || "Не удалось войти через соцсеть";
+      ui.authError = e.message || "Не удалось войти";
+      ui.modal = { type: "socialName", provider };
+      ui.screen = "auth";
       render();
     }
   }
@@ -2105,12 +2183,28 @@
       render();
       return;
     }
-    const user = getUserById(session.userId);
+    let user = getUserById(session.userId);
     if (!user) {
-      saveSession(null);
-      ui.screen = "auth";
-      render();
-      return;
+      // Восстанавливаем пользователя из сессии, если список users потерян
+      if (session.email || session.name) {
+        user = {
+          id: session.userId,
+          email: session.email || "",
+          name: session.name || session.email?.split("@")[0] || "Пользователь",
+          provider: session.provider || "email",
+          password: null,
+          referralCode: session.userId,
+          referralsCount: 0,
+          referralBonusDays: 0,
+          referredBy: null,
+        };
+        upsertUser(user);
+      } else {
+        saveSession(null);
+        ui.screen = "auth";
+        render();
+        return;
+      }
     }
     currentUser = user;
     ui.screen = "app";
@@ -2133,26 +2227,23 @@
       return;
     }
 
-    state = existing;
-    if (!state.profile) {
-      state.profile = {
-        name: user.name,
-        email: user.email,
-        provider: user.provider,
-      };
-    }
+    state = normalizeAppState(existing);
+    state.profile = {
+      ...(state.profile || {}),
+      name: user.name,
+      email: user.email || "",
+      provider: user.provider || "email",
+    };
     ui.activeHouseId = state.activeHouseId || state.houses[0]?.id;
     continueBootAfterAuth();
   }
 
   async function bootWithSupabase() {
+    // Вход всегда локальный; Supabase — только если уже есть облачная сессия
     try {
       const {
         data: { session },
-        error,
       } = await supabase.auth.getSession();
-      if (error) console.warn("Supabase getSession:", error);
-
       if (session?.user) {
         const user = await mergeProfileIntoUser(mapAuthUser(session.user));
         upsertUser({
@@ -2167,33 +2258,7 @@
           referralBonusDays: user.referralBonusDays,
           referredBy: user.referredBy,
         });
-        currentUser = user;
-        saveSession({ userId: user.id, email: user.email });
-        ui.screen = "app";
-        migrateLegacyState(user.id);
-
-        state = await loadUserData();
-        if (!state?.houses?.length) {
-          state = loadState(user.id) || createFreshState();
-          if (!state.houses?.length) state = createFreshState();
-          state.profile = {
-            name: user.name,
-            email: user.email,
-            provider: user.provider,
-          };
-          state.activeHouseId = state.houses[0].id;
-          ui.activeHouseId = state.houses[0].id;
-          markFirstLaunch();
-          await seedDefaultDataToDb(state);
-        } else if (!state.profile) {
-          state.profile = {
-            name: user.name,
-            email: user.email,
-            provider: user.provider,
-          };
-        }
-        ui.activeHouseId = state.activeHouseId || state.houses[0]?.id;
-        continueBootAfterAuth();
+        await enterAppAs(user);
         return;
       }
     } catch (e) {
@@ -2204,14 +2269,6 @@
 
   function boot() {
     if (isSupabaseReady() && supabase) {
-      supabase.auth.onAuthStateChange((event, session) => {
-        if (event === "SIGNED_IN" && session?.user && ui.screen === "auth" && !ui.authLoading) {
-          mergeProfileIntoUser(mapAuthUser(session.user))
-            .then((user) => enterAppAs(user))
-            .catch((e) => console.warn("onAuthStateChange:", e));
-        }
-      });
-
       bootWithSupabase().catch((e) => {
         console.warn(e);
         bootLocal();
@@ -2222,38 +2279,58 @@
   }
 
   function continueBootAfterAuth() {
-    migrateState();
-    const days = inactivityDays();
+    try {
+      migrateState();
+      if (!state?.lastVisitDate) {
+        state.lastVisitDate = new Date().toISOString();
+      }
 
-    if (days >= CODE_RETENTION_DAYS) {
-      hardWipeKeepFirstLaunch();
-      state = null;
-      ui.screen = "deleted";
-      renderDeletedStub();
-      return;
-    }
+      const days = inactivityDays();
 
-    if (days > UI_RETENTION_DAYS && days < CODE_RETENTION_DAYS) {
-      ui.modal = { type: "surprise" };
+      if (days >= CODE_RETENTION_DAYS) {
+        hardWipeKeepFirstLaunch();
+        state = createFreshState();
+        if (currentUser) {
+          state.profile = {
+            name: currentUser.name,
+            email: currentUser.email,
+            provider: currentUser.provider,
+          };
+        }
+        state.activeHouseId = state.houses[0].id;
+        ui.activeHouseId = state.houses[0].id;
+        ui.screen = "deleted";
+        renderDeletedStub();
+        return;
+      }
+
+      if (days > UI_RETENTION_DAYS && days < CODE_RETENTION_DAYS) {
+        ui.modal = { type: "surprise" };
+        render();
+        return;
+      }
+
+      const daysLeftUI = Math.max(0, UI_RETENTION_DAYS - days);
+      ui.sessionDaysUntilDeletion = daysLeftUI;
+      const deadline = new Date(state.lastVisitDate);
+      deadline.setHours(0, 0, 0, 0);
+      deadline.setDate(deadline.getDate() + UI_RETENTION_DAYS);
+      ui.sessionDeletionDeadline = deadline;
+
+      handleDeletionReminders(daysLeftUI);
+      touchVisit();
+      refreshSubscriptionStatus();
+      resetCompletedTodayIfNeeded();
+      saveState();
+      checkGamificationEvents();
       render();
-      return;
+      initNotificationsOnLoad();
+    } catch (e) {
+      console.error("continueBootAfterAuth:", e);
+      if (!state) state = createFreshState();
+      ui.screen = "app";
+      render();
     }
-
-    const daysLeftUI = Math.max(0, UI_RETENTION_DAYS - days);
-    ui.sessionDaysUntilDeletion = daysLeftUI;
-    const deadline = new Date(state.lastVisitDate);
-    deadline.setHours(0, 0, 0, 0);
-    deadline.setDate(deadline.getDate() + UI_RETENTION_DAYS);
-    ui.sessionDeletionDeadline = deadline;
-
-    handleDeletionReminders(daysLeftUI);
-    touchVisit();
-    refreshSubscriptionStatus();
-    resetCompletedTodayIfNeeded();
-    saveState();
-    checkGamificationEvents();
-    render();
-    initNotificationsOnLoad();
   }
 
   function touchVisit() {
@@ -2954,7 +3031,7 @@
               <input id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••" required />
             </div>
             ${err}
-            <button type="submit" class="btn btn-primary" data-action="email-auth" ${disabled}>${submitLabel}</button>
+            <button type="submit" class="btn btn-primary" ${disabled}>${submitLabel}</button>
           </form>
         </div>
       </div>
@@ -2964,7 +3041,7 @@
   function profileView() {
     const user = currentUser || {
       name: state?.profile?.name || "Гость",
-      email: state?.profile?.email || "—",
+      email: state?.profile?.email || "",
       provider: state?.profile?.provider || "email",
       referralsCount: 0,
       referralBonusDays: 0,
@@ -2972,6 +3049,7 @@
     const g = ensureGamification();
     const name = user.name || "Пользователь";
     const providerLabel = PROVIDER_LABELS[user.provider] || user.provider || "Почта";
+    const accountLine = accountDisplay(user);
     const notifSettings = syncNotifPermission();
     const notifChecked = notifSettings.enabled ? "checked" : "";
     const level = getLevelInfo(g.points);
@@ -3024,8 +3102,12 @@
         <div class="profile-card">
           <div class="avatar avatar-lg">${getAvatarHtml(user, g)}</div>
           <h2 class="profile-name">${escapeHtml(name)}</h2>
-          <p class="profile-meta">Аккаунт: ${escapeHtml(user.email || "—")}</p>
-          <p class="profile-meta">Провайдер: ${escapeHtml(providerLabel)}</p>
+          <p class="profile-meta">${escapeHtml(accountLine)}</p>
+          ${
+            user.provider === "email"
+              ? ""
+              : `<p class="profile-meta">Способ входа: ${escapeHtml(providerLabel)}</p>`
+          }
 
           <div class="avatar-picker">
             <p class="picker-label">Аватар</p>
@@ -3544,17 +3626,21 @@
 
     if (type === "socialName") {
       const label = PROVIDER_LABELS[ui.modal.provider] || ui.modal.provider;
+      const err = ui.authError
+        ? `<p class="auth-error">${escapeHtml(ui.authError)}</p>`
+        : "";
       return `
         <div class="overlay center">
           <div class="modal">
             <h2>Вход через ${escapeHtml(label)}</h2>
-            <p class="modal-desc">Вы входите через ${escapeHtml(label)}. Введите ваше имя, чтобы мы знали, как к вам обращаться</p>
+            <p class="modal-desc">Введите имя — оно будет показано в профиле. При повторном входе с тем же именем откроется ваш аккаунт.</p>
             <div class="field">
               <label for="social-name-input">Имя</label>
-              <input id="social-name-input" type="text" placeholder="Как к вам обращаться?" maxlength="40" autocomplete="name" />
+              <input id="social-name-input" type="text" placeholder="Например, Анна" maxlength="40" autocomplete="name" required />
             </div>
-            <button type="button" class="btn btn-primary" data-action="social-confirm">Продолжить</button>
-            <button type="button" class="btn btn-ghost" style="width:100%;margin-top:8px" data-action="social-skip">Пропустить</button>
+            ${err}
+            <button type="button" class="btn btn-primary" data-action="social-confirm" ${ui.authLoading ? "disabled" : ""}>${ui.authLoading ? "Входим…" : "Войти"}</button>
+            <button type="button" class="btn btn-ghost" style="width:100%;margin-top:8px" data-action="close-modal">Отмена</button>
           </div>
         </div>
       `;
@@ -4066,6 +4152,16 @@
         if (file) handleAvatarUpload(file);
       };
     }
+    const socialNameInput = root.querySelector("#social-name-input");
+    if (socialNameInput) {
+      socialNameInput.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (ui.authLoading) return;
+          completeSocialLogin(ui.modal?.provider, socialNameInput.value);
+        }
+      };
+    }
   }
 
   function onClick(e) {
@@ -4139,17 +4235,7 @@
         break;
       }
       case "social-skip":
-        if (ui.authLoading) break;
-        completeSocialLogin(ui.modal?.provider, "");
         break;
-      case "email-auth": {
-        e.preventDefault();
-        if (ui.authLoading) break;
-        const email = document.getElementById("auth-email")?.value || "";
-        const password = document.getElementById("auth-password")?.value || "";
-        loginWithEmail(email, password);
-        break;
-      }
       case "open-house":
         ui.tab = "schedule";
         ui.planView = "rooms";
